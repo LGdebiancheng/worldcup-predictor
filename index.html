@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚽ DeepSeek 世界杯预测 · 真实数据</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { font-family: 'Space Grotesk', sans-serif; }
+        body { background: #f8fafc; transition: 0.3s; }
+        body.dark-mode { background: #0b0f19; color: #e2e8f0; }
+        .glass-card { background: rgba(255,255,255,0.75); backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.3); }
+        body.dark-mode .glass-card { background: rgba(20,30,50,0.7); border-color: rgba(255,255,255,0.05); }
+        .pred-tag { padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .summary-table td, .summary-table th { padding: 8px; text-align: center; border-bottom: 1px solid #e5e7eb; }
+        body.dark-mode .summary-table td, body.dark-mode .summary-table th { border-color: #374151; }
+        .data-source-badge { background: #10b981; color: white; padding: 2px 10px; border-radius: 20px; font-size: 0.65rem; }
+        .data-source-fallback { background: #f59e0b; color: white; padding: 2px 10px; border-radius: 20px; font-size: 0.65rem; }
+    </style>
+</head>
+<body>
+<nav class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">⚽</span>
+                <span class="font-bold text-xl text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">DeepSeek 世界杯 · 真实数据</span>
+                <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">在线版</span>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="dataSourceBadge" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">加载中...</span>
+                <button id="themeToggle" class="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200">
+                    <i id="themeIcon" class="fas fa-moon"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- 头部 -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800 dark:text-white">
+            🧠 DeepSeek <span class="text-blue-600">多玩法 AI 推演</span>
+        </h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm">
+            <i class="far fa-calendar-alt"></i> <span id="matchDate">加载中...</span>
+            <span class="mx-2">|</span>
+            <span class="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 px-2 py-0.5 rounded-full text-xs">实时生成</span>
+        </p>
+    </div>
+
+    <div id="matchList" class="space-y-6"></div>
+
+    <!-- 汇总表 -->
+    <div id="summarySection" class="mt-10 glass-card rounded-2xl p-6 shadow-sm">
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-4">📊 预测汇总</h2>
+        <div id="summaryTableContainer"></div>
+    </div>
+</main>
+
+<script>
+// ---------- 深色模式 ----------
+(function() {
+    let theme = 'light';
+    try {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'dark' || saved === 'light') theme = saved;
+        else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) theme = 'dark';
+    } catch(e) {}
+    document.body.classList.toggle('dark-mode', theme === 'dark');
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+})();
+document.getElementById('themeToggle').addEventListener('click', function() {
+    const body = document.body;
+    const icon = document.getElementById('themeIcon');
+    const isDark = body.classList.toggle('dark-mode');
+    icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+});
+
+// ---------- 国旗映射 ----------
+const flagMap = {
+    'Brazil': '🇧🇷', 'Argentina': '🇦🇷', 'France': '🇫🇷', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Germany': '🇩🇪', 'Spain': '🇪🇸', 'Portugal': '🇵🇹', 'Netherlands': '🇳🇱',
+    'Italy': '🇮🇹', 'Belgium': '🇧🇪', 'Mexico': '🇲🇽', 'Uruguay': '🇺🇾',
+    'Croatia': '🇭🇷', 'Denmark': '🇩🇰', 'Switzerland': '🇨🇭', 'USA': '🇺🇸',
+    'Senegal': '🇸🇳', 'Japan': '🇯🇵', 'South Korea': '🇰🇷', 'Australia': '🇦🇺',
+    'Ecuador': '🇪🇨', 'Ghana': '🇬🇭', 'Morocco': '🇲🇦', 'Nigeria': '🇳🇬',
+    'Serbia': '🇷🇸', 'Poland': '🇵🇱', 'Ukraine': '🇺🇦', 'Austria': '🇦🇹',
+    'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Czech Republic': '🇨🇿', 'South Africa': '🇿🇦',
+    'Canada': '🇨🇦', 'New Zealand': '🇳🇿', 'Costa Rica': '🇨🇷', 'Panama': '🇵🇦'
+};
+// 中文名称映射（将英文队名转为中文显示）
+const nameMap = {
+    'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰',
+    'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰',
+    'Italy': '意大利', 'Belgium': '比利时', 'Mexico': '墨西哥', 'Uruguay': '乌拉圭',
+    'Croatia': '克罗地亚', 'Denmark': '丹麦', 'Switzerland': '瑞士', 'USA': '美国',
+    'Senegal': '塞内加尔', 'Japan': '日本', 'South Korea': '韩国', 'Australia': '澳大利亚',
+    'Ecuador': '厄瓜多尔', 'Ghana': '加纳', 'Morocco': '摩洛哥', 'Nigeria': '尼日利亚',
+    'Serbia': '塞尔维亚', 'Poland': '波兰', 'Ukraine': '乌克兰', 'Austria': '奥地利',
+    'Wales': '威尔士', 'Scotland': '苏格兰', 'Czech Republic': '捷克', 'South Africa': '南非',
+    'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马'
+};
+
+// ---------- 从后端获取真实数据 ----------
+let matchData = [];
+let dataSource = 'loading';
+
+async function fetchRealMatches() {
+    try {
+        const resp = await fetch('/api/matches');
+        const result = await resp.json();
+        const badge = document.getElementById('dataSourceBadge');
+        if (result.success && result.matches && result.matches.length > 0) {
+            // 转换数据格式
+            matchData = result.matches.map(m => {
+                const homeName = nameMap[m.home] || m.home;
+                const awayName = nameMap[m.away] || m.away;
+                const homeFlag = flagMap[m.home] || '🏳️';
+                const awayFlag = flagMap[m.away] || '🏳️';
+                // 如果比分是 null，显示 "-"
+                const hScore = m.homeScore !== null ? m.homeScore : '-';
+                const aScore = m.awayScore !== null ? m.awayScore : '-';
+                return {
+                    home: homeName,
+                    away: awayName,
+                    homeScore: hScore,
+                    awayScore: aScore,
+                    time: m.time || '--:--',
+                    status: m.status || 'SCHEDULED',
+                    homeFlag: homeFlag,
+                    awayFlag: awayFlag,
+                    _rawHome: m.home,
+                    _rawAway: m.away
+                };
+            });
+            // 过滤出已完赛或有比分的比赛（优先显示）
+            const finished = matchData.filter(m => m.homeScore !== '-' && m.awayScore !== '-');
+            if (finished.length > 0) {
+                matchData = finished;
+            }
+            dataSource = 'live';
+            badge.textContent = '📡 真实数据 (Football-Data.org)';
+            badge.className = 'text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full';
+            document.getElementById('matchDate').textContent = new Date().toLocaleDateString('zh-CN');
+            return true;
+        } else {
+            // 没有数据，使用模拟数据
+            dataSource = 'fallback';
+            badge.textContent = '⚠️ 模拟数据 (无真实数据)';
+            badge.className = 'text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full';
+            useFallbackData();
+            return false;
+        }
+    } catch (e) {
+        console.warn('获取真实数据失败，使用模拟数据:', e.message);
+        dataSource = 'fallback';
+        document.getElementById('dataSourceBadge').textContent = '⚠️ 模拟数据 (API不可用)';
+        document.getElementById('dataSourceBadge').className = 'text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full';
+        useFallbackData();
+        return false;
+    }
+}
+
+// ---------- 备选模拟数据 ----------
+function useFallbackData() {
+    matchData = [
+        { home: '巴西', away: '阿根廷', homeScore: 2, awayScore: 1, time: '03:00', homeFlag: '🇧🇷', awayFlag: '🇦🇷', status: 'FINISHED' },
+        { home: '法国', away: '英格兰', homeScore: 1, awayScore: 1, time: '06:00', homeFlag: '🇫🇷', awayFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', status: 'FINISHED' },
+        { home: '德国', away: '西班牙', homeScore: 2, awayScore: 3, time: '09:00', homeFlag: '🇩🇪', awayFlag: '🇪🇸', status: 'FINISHED' },
+        { home: '葡萄牙', away: '荷兰', homeScore: 0, awayScore: 2, time: '12:00', homeFlag: '🇵🇹', awayFlag: '🇳🇱', status: 'FINISHED' },
+        { home: '意大利', away: '比利时', homeScore: 1, awayScore: 0, time: '15:00', homeFlag: '🇮🇹', awayFlag: '🇧🇪', status: 'FINISHED' }
+    ];
+    document.getElementById('matchDate').textContent = '2026-06-17 (模拟)';
+}
+
+// ---------- 调用 DeepSeek 预测 ----------
+async function fetchPredictions(home, away) {
+    try {
+        const resp = await fetch('/api/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ home, away })
+        });
+        const result = await resp.json();
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+    } catch (e) {
+        return {
+            win_draw_lose: { prediction: '服务异常', analysis: e.message },
+            handicap: { prediction: '服务异常', analysis: '' },
+            total_goals: { prediction: '服务异常', analysis: '' },
+            half_full: { prediction: '服务异常', analysis: '' },
+            correct_score: { prediction: '服务异常', analysis: '' }
+        };
+    }
+}
+
+// ---------- 渲染比赛 ----------
+async function renderMatches() {
+    const container = document.getElementById('matchList');
+    if (!matchData || matchData.length === 0) {
+        container.innerHTML = `<div class="glass-card rounded-xl p-8 text-center text-gray-500">暂无比赛数据</div>`;
+        return;
+    }
+
+    container.innerHTML = matchData.map((m, i) => `
+        <div id="card-${i}" class="glass-card rounded-xl p-5 shadow-sm border border-gray-100/50 dark:border-gray-700/30">
+            <div class="flex flex-wrap items-center gap-3 mb-2">
+                <span class="text-2xl">${m.homeFlag || '🏳️'}</span>
+                <span class="font-bold text-gray-800 dark:text-white">${m.home}</span>
+                <span class="text-2xl font-black text-gray-800 dark:text-white">${m.homeScore}</span>
+                <span class="text-xl text-gray-400">:</span>
+                <span class="text-2xl font-black text-gray-800 dark:text-white">${m.awayScore}</span>
+                <span class="text-2xl">${m.awayFlag || '🏳️'}</span>
+                <span class="font-bold text-gray-800 dark:text-white">${m.away}</span>
+                <span class="text-xs text-gray-400">${m.time}</span>
+                <span class="text-xs ${m.status === 'FINISHED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'} px-2 py-0.5 rounded-full">${m.status === 'FINISHED' ? '✅ 已完赛' : '⏳ 未开始'}</span>
+            </div>
+            <div id="pred-${i}" class="space-y-1 text-sm">
+                <div class="flex flex-wrap gap-2"><span class="font-medium">胜平负：</span><span id="spf-${i}" class="text-gray-400">预测中...</span></div>
+                <div class="flex flex-wrap gap-2"><span class="font-medium">让球胜平负：</span><span id="rq-${i}" class="text-gray-400">预测中...</span></div>
+                <div class="flex flex-wrap gap-2"><span class="font-medium">总进球：</span><span id="tg-${i}" class="text-gray-400">预测中...</span></div>
+                <div class="flex flex-wrap gap-2"><span class="font-medium">半全场：</span><span id="hf-${i}" class="text-gray-400">预测中...</span></div>
+                <div class="flex flex-wrap gap-2"><span class="font-medium">正确比分：</span><span id="cs-${i}" class="text-gray-400">预测中...</span></div>
+            </div>
+        </div>
+    `).join('');
+
+    // 逐个调用预测
+    let allPredictions = [];
+    for (let i = 0; i < matchData.length; i++) {
+        const m = matchData[i];
+        const preds = await fetchPredictions(m.home, m.away);
+        const spfEl = document.getElementById(`spf-${i}`);
+        const rqEl = document.getElementById(`rq-${i}`);
+        const tgEl = document.getElementById(`tg-${i}`);
+        const hfEl = document.getElementById(`hf-${i}`);
+        const csEl = document.getElementById(`cs-${i}`);
+        if (spfEl) spfEl.innerHTML = `<span class="pred-tag bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">${preds.win_draw_lose?.prediction || '--'}</span> <span class="text-gray-500">${preds.win_draw_lose?.analysis || ''}</span>`;
+        if (rqEl) rqEl.innerHTML = `<span class="pred-tag bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">${preds.handicap?.prediction || '--'}</span> <span class="text-gray-500">${preds.handicap?.analysis || ''}</span>`;
+        if (tgEl) tgEl.innerHTML = `<span class="pred-tag bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">${preds.total_goals?.prediction || '--'}</span> <span class="text-gray-500">${preds.total_goals?.analysis || ''}</span>`;
+        if (hfEl) hfEl.innerHTML = `<span class="pred-tag bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">${preds.half_full?.prediction || '--'}</span> <span class="text-gray-500">${preds.half_full?.analysis || ''}</span>`;
+        if (csEl) csEl.innerHTML = `<span class="pred-tag bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">${preds.correct_score?.prediction || '--'}</span> <span class="text-gray-500">${preds.correct_score?.analysis || ''}</span>`;
+
+        allPredictions.push({
+            home: m.home, away: m.away,
+            actual: `${m.homeScore}:${m.awayScore}`,
+            spf_pred: preds.win_draw_lose?.prediction || '--',
+            rq_pred: preds.handicap?.prediction || '--',
+            tg_pred: preds.total_goals?.prediction || '--',
+            hf_pred: preds.half_full?.prediction || '--',
+            cs_pred: preds.correct_score?.prediction || '--'
+        });
+    }
+
+    setTimeout(() => renderSummary(allPredictions), 500);
+}
+
+// ---------- 汇总表 ----------
+function renderSummary(predictions) {
+    const container = document.getElementById('summaryTableContainer');
+    const results = matchData.map(m => ({ home: m.home, away: m.away, actual: `${m.homeScore}:${m.awayScore}` }));
+    let stats = {
+        spf: { correct: 0, total: 0 },
+        rq: { correct: 0, total: 0 },
+        tg: { correct: 0, total: 0 },
+        hf: { correct: 0, total: 0 },
+        cs: { correct: 0, total: 0 }
+    };
+    predictions.forEach((p, idx) => {
+        if (idx >= results.length) return;
+        const actual = results[idx].actual;
+        const [h, a] = actual.split(':').map(Number);
+        let actualSPF = '';
+        if (h > a) actualSPF = '主队胜';
+        else if (h < a) actualSPF = '客队胜';
+        else actualSPF = '平局';
+        if (p.spf_pred === actualSPF) stats.spf.correct++;
+        stats.spf.total++;
+        if (p.rq_pred === actualSPF) stats.rq.correct++;
+        stats.rq.total++;
+        const totalGoals = h + a;
+        let actualTG = totalGoals > 2.5 ? '大球' : '小球';
+        if (p.tg_pred === actualTG) stats.tg.correct++;
+        stats.tg.total++;
+        if (p.hf_pred === actualSPF) stats.hf.correct++;
+        stats.hf.total++;
+        if (p.cs_pred === actual) stats.cs.correct++;
+        stats.cs.total++;
+    });
+
+    let html = `
+        <table class="summary-table w-full text-sm">
+            <thead><tr class="bg-gray-100 dark:bg-gray-800">
+                <th>玩法</th><th>预测正确场次</th><th>总场次</th><th>正确率</th>
+            </tr></thead>
+            <tbody>
+                <tr><td>胜平负</td><td>${stats.spf.correct}</td><td>${stats.spf.total}</td><td>${stats.spf.total > 0 ? (stats.spf.correct/stats.spf.total*100).toFixed(1) : 0}%</td></tr>
+                <tr><td>让球胜平负</td><td>${stats.rq.correct}</td><td>${stats.rq.total}</td><td>${stats.rq.total > 0 ? (stats.rq.correct/stats.rq.total*100).toFixed(1) : 0}%</td></tr>
+                <tr><td>总进球</td><td>${stats.tg.correct}</td><td>${stats.tg.total}</td><td>${stats.tg.total > 0 ? (stats.tg.correct/stats.tg.total*100).toFixed(1) : 0}%</td></tr>
+                <tr><td>半全场</td><td>${stats.hf.correct}</td><td>${stats.hf.total}</td><td>${stats.hf.total > 0 ? (stats.hf.correct/stats.hf.total*100).toFixed(1) : 0}%</td></tr>
+                <tr><td>正确比分</td><td>${stats.cs.correct}</td><td>${stats.cs.total}</td><td>${stats.cs.total > 0 ? (stats.cs.correct/stats.cs.total*100).toFixed(1) : 0}%</td></tr>
+            </tbody>
+        </table>
+        <p class="text-xs text-gray-400 mt-3 text-center">数据来源: ${dataSource === 'live' ? 'Football-Data.org 实时数据' : '本地模拟数据'}</p>
+    `;
+    container.innerHTML = html;
+}
+
+// ---------- 启动 ----------
+async function init() {
+    await fetchRealMatches();
+    renderMatches();
+}
+init();
+</script>
+</body>
+</html>
