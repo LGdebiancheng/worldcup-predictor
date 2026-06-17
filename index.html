@@ -131,6 +131,22 @@
         .conf-high { background: #dcfce7; color: #166534; }
         .conf-mid { background: #fef9c3; color: #854d0e; }
         .conf-low { background: #fee2e2; color: #991b1b; }
+        .upcoming-type {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #475569;
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+        .best-highlight {
+            background: #fffbeb;
+        }
+        .best-highlight .upcoming-type {
+            background: #fef3c7;
+            color: #92400e;
+        }
     </style>
 </head>
 <body>
@@ -358,38 +374,67 @@ function renderApp(state) {
         html += `</tbody></table><div class="caption-text">每笔投注100元，盈利 = 100*(赔率-1)，亏损 = -100；总盈亏为该场所有玩法盈亏之和</div></div>`;
     }
 
-    // ----- 未开赛表格 -----
+    // ----- 未开赛表格（显示最新+最佳两行） -----
     if (upcoming.length > 0) {
         html += `<div class="card"><h2>⏳ 未开始比赛（使用最佳推演方法「${bestMethod}」预测，共${upcoming.length}场）</h2><table><thead><tr>
-            <th>时间</th><th>比赛双方</th><th>预测结果</th>
+            <th>时间</th><th>比赛双方</th><th>类型</th>
             <th>胜平负</th><th>让球</th><th>总进球</th><th>半全场</th><th>比分</th><th>信心度</th>
         </tr></thead><tbody>`;
         upcoming.forEach(item => {
             const m = item;
-            const pred = m.pred;
             const isBest = (method) => method === bestMethod;
-            const confidence = m.confidence !== undefined ? m.confidence : (pred ? pred.confidence : null);
-            let confBadge = '<span class="badge badge-gray">--</span>';
-            if (confidence !== null && confidence !== undefined) {
+
+            // 最新推演行
+            const latest = item.latest;
+            const latestPred = latest ? latest.pred : null;
+            const latestConf = latest ? latest.confidence : null;
+            let latestConfBadge = '<span class="badge badge-gray">--</span>';
+            if (latestConf !== null && latestConf !== undefined) {
                 let cls = 'conf-low';
-                if (confidence >= 70) cls = 'conf-high';
-                else if (confidence >= 40) cls = 'conf-mid';
-                confBadge = `<span class="confidence-badge ${cls}">${confidence}%</span>`;
+                if (latestConf >= 70) cls = 'conf-high';
+                else if (latestConf >= 40) cls = 'conf-mid';
+                latestConfBadge = `<span class="confidence-badge ${cls}">${latestConf}%</span>`;
             }
 
+            // 最佳推演行
+            const best = item.best;
+            const bestPred = best ? best.pred : null;
+            const bestConf = best ? best.confidence : null;
+            let bestConfBadge = '<span class="badge badge-gray">--</span>';
+            if (bestConf !== null && bestConf !== undefined) {
+                let cls = 'conf-low';
+                if (bestConf >= 70) cls = 'conf-high';
+                else if (bestConf >= 40) cls = 'conf-mid';
+                bestConfBadge = `<span class="confidence-badge ${cls}">${bestConf}%</span>`;
+            }
+
+            // 行1：最新
             html += `<tr>
-                <td>${formatDateTime(m.date)}</td>
-                <td><span class="flag">${flagMap[m.home] || '🏳️'}</span>${m.home} 对 ${m.away}<span class="flag">${flagMap[m.away] || '🏳️'}</span></td>
-                <td><span class="badge badge-yellow">待定</span></td>
-                <td>${pred ? pred.win_draw_lose.prediction : '--'} ${isBest('胜平负') ? '⭐' : ''}</td>
-                <td>${pred ? pred.handicap.prediction : '--'} ${isBest('让球胜平负') ? '⭐' : ''}</td>
-                <td>${pred ? pred.total_goals.prediction + '球' : '--'} ${isBest('总进球数') ? '⭐' : ''}</td>
-                <td>${pred ? pred.half_full.prediction : '--'} ${isBest('半全场') ? '⭐' : ''}</td>
-                <td>${pred ? pred.correct_score.prediction : '--'} ${isBest('正确比分') ? '⭐' : ''}</td>
-                <td>${confBadge}</td>
+                <td rowspan="2">${formatDateTime(m.date)}</td>
+                <td rowspan="2"><span class="flag">${flagMap[m.home] || '🏳️'}</span>${m.home} 对 ${m.away}<span class="flag">${flagMap[m.away] || '🏳️'}</span></td>
+                <td><span class="upcoming-type">最新</span></td>
+                <td>${latestPred ? latestPred.win_draw_lose.prediction : '--'} ${isBest('胜平负') ? '⭐' : ''}</td>
+                <td>${latestPred ? latestPred.handicap.prediction : '--'} ${isBest('让球胜平负') ? '⭐' : ''}</td>
+                <td>${latestPred ? latestPred.total_goals.prediction + '球' : '--'} ${isBest('总进球数') ? '⭐' : ''}</td>
+                <td>${latestPred ? latestPred.half_full.prediction : '--'} ${isBest('半全场') ? '⭐' : ''}</td>
+                <td>${latestPred ? latestPred.correct_score.prediction : '--'} ${isBest('正确比分') ? '⭐' : ''}</td>
+                <td>${latestConfBadge}</td>
+            </tr>`;
+            // 行2：最佳
+            html += `<tr class="best-highlight">
+                <td><span class="upcoming-type" style="background:#fef3c7; color:#92400e;">最佳</span></td>
+                <td>${bestPred ? bestPred.win_draw_lose.prediction : '--'} ${isBest('胜平负') ? '⭐' : ''}</td>
+                <td>${bestPred ? bestPred.handicap.prediction : '--'} ${isBest('让球胜平负') ? '⭐' : ''}</td>
+                <td>${bestPred ? bestPred.total_goals.prediction + '球' : '--'} ${isBest('总进球数') ? '⭐' : ''}</td>
+                <td>${bestPred ? bestPred.half_full.prediction : '--'} ${isBest('半全场') ? '⭐' : ''}</td>
+                <td>${bestPred ? bestPred.correct_score.prediction : '--'} ${isBest('正确比分') ? '⭐' : ''}</td>
+                <td>${bestConfBadge}</td>
             </tr>`;
         });
-        html += `</tbody></table><div style="margin-top:8px; font-size:0.8rem; color:#64748b;">⭐ 标记为「最佳推演方法（${bestMethod}）」的预测结果，其他仅供参考；信心度由 AI 自评。</div></div>`;
+        html += `</tbody></table><div style="margin-top:8px; font-size:0.8rem; color:#64748b;">
+            ⭐ 标记为「最佳推演方法（${bestMethod}）」的预测结果，其他仅供参考；<br>
+            「最新」为每30秒实时推演，「最佳」为历史最高信心度推演（confidence最高）。
+        </div></div>`;
     } else {
         html += `<div class="card"><p style="text-align:center; color:#94a3b8;">暂无未开始比赛预测</p></div>`;
     }
