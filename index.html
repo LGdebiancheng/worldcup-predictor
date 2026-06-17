@@ -238,7 +238,7 @@ function renderApp(state) {
                 </span>
             </div>
             <div style="margin-top:8px; font-size:0.8rem; color:#64748b;">
-                后台持续推演，前端展示最新缓存结果，爆冷比赛权重下调50%
+                已完赛每5分钟推演 · 未开赛每30秒推演 · 爆冷比赛权重×0.5
             </div>
         </div>
     `;
@@ -358,7 +358,7 @@ function renderApp(state) {
         html += `</tbody></table><div class="caption-text">每笔投注100元，盈利 = 100*(赔率-1)，亏损 = -100；总盈亏为该场所有玩法盈亏之和</div></div>`;
     }
 
-    // ----- 未开赛表格（只有已预测的4场） -----
+    // ----- 未开赛表格 -----
     if (upcoming.length > 0) {
         html += `<div class="card"><h2>⏳ 未开始比赛（使用最佳推演方法「${bestMethod}」预测，共${upcoming.length}场）</h2><table><thead><tr>
             <th>时间</th><th>比赛双方</th><th>预测结果</th>
@@ -394,7 +394,7 @@ function renderApp(state) {
         html += `<div class="card"><p style="text-align:center; color:#94a3b8;">暂无未开始比赛预测</p></div>`;
     }
 
-    html += `<div class="footer-note">数据来源：Football-Data.org · 预测由 DeepSeek 生成 · 后台持续推演，前端瞬间加载 · 投注为模拟 · 爆冷比赛权重×0.5</div>`;
+    html += `<div class="footer-note">数据来源：Football-Data.org · 预测由 DeepSeek 生成 · 已完赛每5分钟推演 · 未开赛每30秒推演 · 爆冷权重×0.5</div>`;
     app.innerHTML = html;
 }
 
