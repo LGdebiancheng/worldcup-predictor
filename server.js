@@ -119,7 +119,6 @@ function calculateBetProfit(method, prediction, actualScore) {
 
 // ---------- 判断是否为爆冷 ----------
 function isUpset(home, away, actualScore, homeOdds, drawOdds, awayOdds) {
-    // 利用赔率计算隐含概率
     const totalProb = 1/homeOdds + 1/drawOdds + 1/awayOdds;
     const probHome = (1/homeOdds) / totalProb;
     const probDraw = (1/drawOdds) / totalProb;
@@ -129,7 +128,7 @@ function isUpset(home, away, actualScore, homeOdds, drawOdds, awayOdds) {
     if (h > a) actualProb = probHome;
     else if (h < a) actualProb = probAway;
     else actualProb = probDraw;
-    return actualProb < 0.25; // 概率低于25%视为爆冷
+    return actualProb < 0.25;
 }
 
 // ---------- 生成模拟赔率（基于ELO） ----------
@@ -137,12 +136,10 @@ function generateOdds(home, away) {
     const eloH = getElo(home);
     const eloA = getElo(away);
     const diff = eloH - eloA;
-    // 转换为主胜、平、客胜概率
     const pWin = 1 / (1 + Math.exp(-diff/200));
     const pDraw = 0.25 * (1 - Math.abs(diff)/400);
     let pLose = 1 - pWin - pDraw;
     if (pLose < 0.1) pLose = 0.1;
-    // 归一化
     const total = pWin + pDraw + pLose;
     const oddsWin = 1 / (pWin / total);
     const oddsDraw = 1 / (pDraw / total);
@@ -192,7 +189,7 @@ async function fetchMatchesFromAPI() {
 
         return {
             success: true,
-            finished: finished.slice(0, 15),
+            finished: finished.slice(0, 50), // 确保获取所有已完赛
             upcoming: upcoming.slice(0, 15)
         };
     } catch (error) {
@@ -242,80 +239,89 @@ async function callDeepSeek(home, away) {
     return JSON.parse(content);
 }
 
-// ---------- 后台推演 ----------
-async function runSimulation() {
-    console.log('🔄 开始新一轮后台推演...');
+// ---------- 推演已完赛（所有已完赛，每5分钟） ----------
+async function runFinishedSimulation() {
+    console.log('🔄 [已完赛] 开始推演...');
     try {
         const matchData = await fetchMatchesFromAPI();
         lastMatchData = matchData;
         const finished = matchData.finished || [];
-        const upcoming = matchData.upcoming || [];
+        if (finished.length === 0) {
+            console.log('⏸️ [已完赛] 无比赛，跳过');
+            return;
+        }
 
-        // ----- 1. 推演已完赛（最多10场） -----
-        if (finished.length > 0) {
-            const targetMatches = finished.slice(0, 10);
-            for (const match of targetMatches) {
-                const home = match.home;
-                const away = match.away;
-                const actualScore = `${match.homeScore}:${match.awayScore}`;
-                const matchId = `${home}_${away}_${match.date}`;
+        for (const match of finished) {
+            const home = match.home;
+            const away = match.away;
+            const actualScore = `${match.homeScore}:${match.awayScore}`;
+            const matchId = `${home}_${away}_${match.date}`;
 
-                if (optimalCache.has(matchId)) {
-                    const cached = optimalCache.get(matchId);
-                    if (totalAttempts - cached.attempt <= 100) {
-                        continue;
+            console.log(`🔁 [已完赛] 推演 ${home} vs ${away}`);
+            let bestPred = null;
+            let bestScore = -1;
+            let bestAttempt = 0;
+            let bestConfidence = null;
+
+            const times = 3;
+            for (let i = 0; i < times; i++) {
+                totalAttempts++;
+                try {
+                    const pred = await callDeepSeek(home, away);
+                    const [h, a] = actualScore.split(':').map(Number);
+                    const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
+                    const totalActual = h + a;
+                    let score = 0;
+                    if (pred.win_draw_lose.prediction === actualSPF) score += 1;
+                    const predTotal = parseInt(pred.total_goals.prediction);
+                    if (!isNaN(predTotal) && predTotal === totalActual) score += 1;
+                    if (pred.correct_score.prediction === actualScore) score += 2;
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestPred = pred;
+                        bestAttempt = totalAttempts;
+                        bestConfidence = pred.confidence || null;
                     }
+                } catch (err) {
+                    console.warn(`推演失败 (${home} vs ${away}):`, err.message);
                 }
+            }
 
-                console.log(`🔁 推演 ${home} vs ${away}`);
-                let bestPred = null;
-                let bestScore = -1;
-                let bestAttempt = 0;
-                let bestConfidence = null;
-
-                const times = 3;
-                for (let i = 0; i < times; i++) {
-                    totalAttempts++;
-                    try {
-                        const pred = await callDeepSeek(home, away);
-                        const [h, a] = actualScore.split(':').map(Number);
-                        const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
-                        const totalActual = h + a;
-                        let score = 0;
-                        if (pred.win_draw_lose.prediction === actualSPF) score += 1;
-                        const predTotal = parseInt(pred.total_goals.prediction);
-                        if (!isNaN(predTotal) && predTotal === totalActual) score += 1;
-                        if (pred.correct_score.prediction === actualScore) score += 2;
-
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestPred = pred;
-                            bestAttempt = totalAttempts;
-                            bestConfidence = pred.confidence || null;
-                        }
-                    } catch (err) {
-                        console.warn(`推演失败 (${home} vs ${away}):`, err.message);
-                    }
-                }
-
-                if (bestPred) {
-                    // 判断是否为爆冷
-                    const odds = generateOdds(home, away);
-                    const isUpsetFlag = isUpset(home, away, actualScore, parseFloat(odds.win), parseFloat(odds.draw), parseFloat(odds.lose));
-                    const weight = isUpsetFlag ? 0.5 : 1.0;
-                    optimalCache.set(matchId, {
-                        pred: bestPred,
-                        attempt: bestAttempt,
-                        score: bestScore,
-                        confidence: bestConfidence,
-                        weight: weight
-                    });
-                    console.log(`✅ 缓存更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
-                }
+            if (bestPred) {
+                const odds = generateOdds(home, away);
+                const isUpsetFlag = isUpset(home, away, actualScore, parseFloat(odds.win), parseFloat(odds.draw), parseFloat(odds.lose));
+                const weight = isUpsetFlag ? 0.5 : 1.0;
+                optimalCache.set(matchId, {
+                    pred: bestPred,
+                    attempt: bestAttempt,
+                    score: bestScore,
+                    confidence: bestConfidence,
+                    weight: weight
+                });
+                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
             }
         }
 
-        // ----- 2. 推演未开赛（只推演前4场） -----
+        // 更新统计
+        updateStatistics(finished);
+        console.log(`✅ [已完赛] 完成，总次数: ${totalAttempts}, 缓存: ${optimalCache.size}`);
+    } catch (error) {
+        console.error('❌ [已完赛] 推演出错:', error);
+    }
+}
+
+// ---------- 推演未开赛（前4场，每30秒） ----------
+async function runUpcomingSimulation() {
+    console.log('🔄 [未开赛] 开始推演...');
+    try {
+        const matchData = lastMatchData; // 使用最新已获取的数据
+        const upcoming = matchData.upcoming || [];
+        if (upcoming.length === 0) {
+            console.log('⏸️ [未开赛] 无比赛，跳过');
+            return;
+        }
+
         upcomingCache.clear();
         const upcomingLimit = 4;
         const upcomingSlice = upcoming.slice(0, upcomingLimit);
@@ -324,24 +330,21 @@ async function runSimulation() {
             const away = match.away;
             const key = `${home}_${away}`;
             try {
-                console.log(`🔮 预测未开赛: ${home} vs ${away}`);
+                console.log(`🔮 [未开赛] 预测 ${home} vs ${away}`);
                 const pred = await callDeepSeek(home, away);
                 upcomingCache.set(key, {
                     pred: pred,
                     confidence: pred.confidence || null,
                     timestamp: new Date().toISOString()
                 });
-                console.log(`✅ 未开赛预测完成: ${home} vs ${away}`);
+                console.log(`✅ [未开赛] 完成: ${home} vs ${away}`);
             } catch (err) {
-                console.warn(`未开赛预测失败 (${home} vs ${away}):`, err.message);
+                console.warn(`[未开赛] 预测失败 (${home} vs ${away}):`, err.message);
             }
         }
-
-        // ----- 3. 更新统计（使用权重） -----
-        updateStatistics(finished);
-        console.log(`✅ 后台推演完成，总次数: ${totalAttempts}, 已完赛缓存: ${optimalCache.size}, 未开赛缓存: ${upcomingCache.size}`);
+        console.log(`✅ [未开赛] 完成，缓存: ${upcomingCache.size}`);
     } catch (error) {
-        console.error('❌ 后台推演出错:', error);
+        console.error('❌ [未开赛] 推演出错:', error);
     }
 }
 
@@ -402,7 +405,7 @@ function updateStatistics(finishedMatches) {
     global.rates = rates;
     global.bestMethod = bestMethod;
 
-    // ----- 投注汇总（权重不用于投注，投注正常计算） -----
+    // ----- 投注汇总（权重不用于投注） -----
     const betRecords = [];
     finishedMatches.forEach(match => {
         const actualScore = `${match.homeScore}:${match.awayScore}`;
@@ -453,13 +456,19 @@ function updateStatistics(finishedMatches) {
     };
 }
 
-// ---------- 后台循环 ----------
-async function backgroundLoop() {
-    console.log('🚀 启动后台推演循环...');
-    await runSimulation();
+// ---------- 定时器启动 ----------
+function startTimers() {
+    // 已完赛：每5分钟（300秒）
     setInterval(async () => {
-        await runSimulation();
-    }, 60000);
+        await runFinishedSimulation();
+    }, 300000);
+
+    // 未开赛：每30秒
+    setInterval(async () => {
+        await runUpcomingSimulation();
+    }, 30000);
+
+    console.log('⏰ 定时器已启动: 已完赛(5分钟), 未开赛(30秒)');
 }
 
 // ---------- API 路由 ----------
@@ -481,7 +490,6 @@ app.get('/api/state', (req, res) => {
         };
     });
 
-    // 只返回有预测的未开赛（即前4场）
     const upcomingWithPred = [];
     upcoming.forEach(match => {
         const key = `${match.home}_${match.away}`;
@@ -493,7 +501,6 @@ app.get('/api/state', (req, res) => {
                 confidence: cached.confidence
             });
         }
-        // 其他未开赛不返回（前端将只显示有预测的）
     });
 
     const state = {
@@ -513,7 +520,12 @@ app.get('/api/state', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    // 初始获取数据
     const data = await fetchMatchesFromAPI();
     lastMatchData = data;
-    backgroundLoop();
+    // 启动定时器
+    startTimers();
+    // 立即执行一次推演
+    await runFinishedSimulation();
+    await runUpcomingSimulation();
 });
