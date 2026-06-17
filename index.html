@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚽ DeepSeek 世界杯预测 · 表格版</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background: #f1f5f9; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid #e2e8f0;
+            overflow-x: auto;
+        }
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th {
+            background: #f8fafc;
+            text-align: left;
+            padding: 10px 8px;
+            border-bottom: 2px solid #e2e8f0;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: middle;
+        }
+        .flag { font-size: 1.2rem; margin-right: 4px; }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-yellow { background: #fef9c3; color: #854d0e; }
+        .badge-gray { background: #e5e7eb; color: #4b5563; }
+        .best-method { background: #fef3c7; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; color: #92400e; margin-left: 6px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+        .summary-item { background: #f8fafc; padding: 10px; border-radius: 10px; text-align: center; }
+        .summary-item .rate { font-size: 1.5rem; font-weight: 700; }
+        .summary-item .label { font-size: 0.7rem; color: #64748b; }
+        .highlight { border: 2px solid #f59e0b; }
+        .caption-text { font-size: 0.75rem; color: #94a3b8; margin-top: 8px; text-align: center; }
+        .info-line { margin-top: 10px; font-size: 0.85rem; color: #475569; display: flex; gap: 10px; flex-wrap: wrap; }
+        .footer-note { text-align: center; font-size: 0.75rem; color: #94a3b8; padding: 20px 0; }
+        .loading { text-align: center; padding: 40px; color: #94a3b8; }
+        .error { color: #dc2626; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="loading">⏳ 加载数据中...</div>
+</div>
+
+<script>
+// ---------- 国旗与名称映射 ----------
+const flagMap = {
+    'Brazil': '🇧🇷', 'Argentina': '🇦🇷', 'France': '🇫🇷', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Germany': '🇩🇪', 'Spain': '🇪🇸', 'Portugal': '🇵🇹', 'Netherlands': '🇳🇱',
+    'Italy': '🇮🇹', 'Belgium': '🇧🇪', 'Mexico': '🇲🇽', 'Uruguay': '🇺🇾',
+    'Croatia': '🇭🇷', 'Denmark': '🇩🇰', 'Switzerland': '🇨🇭', 'USA': '🇺🇸',
+    'Senegal': '🇸🇳', 'Japan': '🇯🇵', 'South Korea': '🇰🇷', 'Australia': '🇦🇺',
+    'Ecuador': '🇪🇨', 'Ghana': '🇬🇭', 'Morocco': '🇲🇦', 'Nigeria': '🇳🇬',
+    'Serbia': '🇷🇸', 'Poland': '🇵🇱', 'Ukraine': '🇺🇦', 'Austria': '🇦🇹',
+    'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Czech Republic': '🇨🇿', 'South Africa': '🇿🇦',
+    'Canada': '🇨🇦', 'New Zealand': '🇳🇿', 'Costa Rica': '🇨🇷', 'Panama': '🇵🇦'
+};
+const nameMap = {
+    'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰',
+    'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰',
+    'Italy': '意大利', 'Belgium': '比利时', 'Mexico': '墨西哥', 'Uruguay': '乌拉圭',
+    'Croatia': '克罗地亚', 'Denmark': '丹麦', 'Switzerland': '瑞士', 'USA': '美国',
+    'Senegal': '塞内加尔', 'Japan': '日本', 'South Korea': '韩国', 'Australia': '澳大利亚',
+    'Ecuador': '厄瓜多尔', 'Ghana': '加纳', 'Morocco': '摩洛哥', 'Nigeria': '尼日利亚',
+    'Serbia': '塞尔维亚', 'Poland': '波兰', 'Ukraine': '乌克兰', 'Austria': '奥地利',
+    'Wales': '威尔士', 'Scotland': '苏格兰', 'Czech Republic': '捷克', 'South Africa': '南非',
+    'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马'
+};
+
+// 模拟赔率（实际可从API获取，这里用固定示例）
+function getOdds(home, away) {
+    // 可用真实赔率API，此处仅作演示
+    return {
+        win: (1.5 + Math.random() * 1.5).toFixed(2),
+        draw: (2.8 + Math.random() * 1.0).toFixed(2),
+        lose: (2.0 + Math.random() * 1.5).toFixed(2),
+        handicap: Math.random() > 0.5 ? '-0.5' : '0',
+        h_odds: (1.8 + Math.random() * 1.2).toFixed(2),
+        d_odds: (2.9 + Math.random() * 0.8).toFixed(2),
+        a_odds: (2.0 + Math.random() * 1.5).toFixed(2)
+    };
+}
+
+// ---------- 调用后端API ----------
+async function fetchMatches() {
+    const resp = await fetch('/api/matches');
+    return resp.json();
+}
+
+async function fetchPrediction(home, away, matchId) {
+    const resp = await fetch('/api/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ home, away, matchId })
+    });
+    return resp.json();
+}
+
+// ---------- 核心逻辑 ----------
+async function init() {
+    const app = document.getElementById('app');
+    try {
+        // 1. 获取比赛数据
+        const data = await fetchMatches();
+        if (!data.success) throw new Error(data.error || '获取数据失败');
+
+        const finished = data.finished || [];
+        const upcoming = data.upcoming || [];
+
+        if (finished.length === 0 && upcoming.length === 0) {
+            app.innerHTML = `<div class="card"><p class="error">暂无比赛数据，请检查 API Key 或稍后重试。</p></div>`;
+            return;
+        }
+
+        // 2. 为每场已完赛获取预测（缓存）
+        const finishedPredictions = [];
+        for (const match of finished) {
+            const home = nameMap[match.home] || match.home;
+            const away = nameMap[match.away] || match.away;
+            const matchId = `${home}_${away}_${match.date}`;
+            const result = await fetchPrediction(home, away, matchId);
+            if (result.success) {
+                finishedPredictions.push({
+                    match: match,
+                    home: home,
+                    away: away,
+                    pred: result.data,
+                    cached: result.cached || false
+                });
+            } else {
+                console.warn(`预测失败: ${home} vs ${away}`, result.error);
+            }
+        }
+
+        // 3. 计算各玩法正确率，找出最佳玩法
+        const stats = { spf: { correct: 0, total: 0 }, rq: { correct: 0, total: 0 }, tg: { correct: 0, total: 0 }, hf: { correct: 0, total: 0 }, cs: { correct: 0, total: 0 } };
+        finishedPredictions.forEach((item) => {
+            const actual = `${item.match.homeScore}:${item.match.awayScore}`;
+            const [h, a] = actual.split(':').map(Number);
+            const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
+            const pred = item.pred;
+            // 胜平负
+            if (pred.win_draw_lose.prediction === actualSPF) stats.spf.correct++;
+            stats.spf.total++;
+            // 让球（简化，用实际胜负代替）
+            if (pred.handicap.prediction === actualSPF) stats.rq.correct++;
+            stats.rq.total++;
+            // 总进球
+            const total = h + a;
+            const actualTG = total > 2.5 ? '大球' : '小球';
+            if (pred.total_goals.prediction === actualTG) stats.tg.correct++;
+            stats.tg.total++;
+            // 半全场（简化）
+            if (pred.half_full.prediction === actualSPF) stats.hf.correct++;
+            stats.hf.total++;
+            // 正确比分
+            if (pred.correct_score.prediction === actual) stats.cs.correct++;
+            stats.cs.total++;
+        });
+
+        // 找出最佳玩法
+        const rates = {
+            '胜平负': stats.spf.total > 0 ? stats.spf.correct / stats.spf.total : 0,
+            '让球胜平负': stats.rq.total > 0 ? stats.rq.correct / stats.rq.total : 0,
+            '总进球': stats.tg.total > 0 ? stats.tg.correct / stats.tg.total : 0,
+            '半全场': stats.hf.total > 0 ? stats.hf.correct / stats.hf.total : 0,
+            '正确比分': stats.cs.total > 0 ? stats.cs.correct / stats.cs.total : 0
+        };
+        let bestMethod = '胜平负';
+        let bestRate = 0;
+        for (const [key, val] of Object.entries(rates)) {
+            if (val > bestRate) { bestRate = val; bestMethod = key; }
+        }
+
+        // 4. 生成未开始比赛的预测（使用最佳玩法，但实际我们调用AI生成所有玩法，前端只突出最佳）
+        const upcomingPredictions = [];
+        for (const match of upcoming) {
+            const home = nameMap[match.home] || match.home;
+            const away = nameMap[match.away] || match.away;
+            const matchId = `upcoming_${home}_${away}_${match.date}`;
+            const result = await fetchPrediction(home, away, matchId);
+            if (result.success) {
+                upcomingPredictions.push({
+                    match: match,
+                    home: home,
+                    away: away,
+                    pred: result.data,
+                    bestMethod: bestMethod
+                });
+            } else {
+                console.warn(`预测失败: ${home} vs ${away}`, result.error);
+            }
+        }
+
+        // 5. 渲染页面
+        renderApp(finishedPredictions, upcomingPredictions, stats, bestMethod);
+
+    } catch (error) {
+        app.innerHTML = `<div class="card"><p class="error">❌ 加载失败: ${error.message}</p></div>`;
+        console.error(error);
+    }
+}
+
+// ---------- 渲染 ----------
+function renderApp(finished, upcoming, stats, bestMethod) {
+    const app = document.getElementById('app');
+    let html = '';
+
+    // 汇总表
+    const totalSPF = stats.spf.total || 1;
+    const totalRQ = stats.rq.total || 1;
+    const totalTG = stats.tg.total || 1;
+    const totalHF = stats.hf.total || 1;
+    const totalCS = stats.cs.total || 1;
+    html += `
+        <div class="card">
+            <h2>📊 已完赛预测正确率汇总</h2>
+            <div class="summary-grid">
+                <div class="summary-item ${bestMethod === '胜平负' ? 'highlight' : ''}">
+                    <div class="rate">${(stats.spf.correct/totalSPF*100).toFixed(0)}%</div>
+                    <div class="label">🏆 胜平负</div>
+                </div>
+                <div class="summary-item ${bestMethod === '让球胜平负' ? 'highlight' : ''}">
+                    <div class="rate">${(stats.rq.correct/totalRQ*100).toFixed(0)}%</div>
+                    <div class="label">让球胜平负</div>
+                </div>
+                <div class="summary-item ${bestMethod === '总进球' ? 'highlight' : ''}">
+                    <div class="rate">${(stats.tg.correct/totalTG*100).toFixed(0)}%</div>
+                    <div class="label">总进球</div>
+                </div>
+                <div class="summary-item ${bestMethod === '半全场' ? 'highlight' : ''}">
+                    <div class="rate">${(stats.hf.correct/totalHF*100).toFixed(0)}%</div>
+                    <div class="label">半全场</div>
+                </div>
+                <div class="summary-item ${bestMethod === '正确比分' ? 'highlight' : ''}">
+                    <div class="rate">${(stats.cs.correct/totalCS*100).toFixed(0)}%</div>
+                    <div class="label">正确比分</div>
+                </div>
+            </div>
+            <div class="info-line">
+                <span>✅ 最佳预测玩法：<strong>${bestMethod}</strong>（正确率 ${(stats[bestMethod === '胜平负' ? 'spf' : bestMethod === '让球胜平负' ? 'rq' : bestMethod === '总进球' ? 'tg' : bestMethod === '半全场' ? 'hf' : 'cs'].correct / stats[bestMethod === '胜平负' ? 'spf' : bestMethod === '让球胜平负' ? 'rq' : bestMethod === '总进球' ? 'tg' : bestMethod === '半全场' ? 'hf' : 'cs'].total * 100).toFixed(0)}%）</span>
+                <span>📌 未开始比赛将突出显示此玩法预测</span>
+            </div>
+        </div>
+    `;
+
+    // 已完赛表格
+    html += `<div class="card"><h2>✅ 已完赛比赛（预测结果已固定）</h2><table><thead><tr>
+        <th>时间</th><th>比赛双方</th><th>结果</th><th>胜平负（赔率）</th><th>让球胜平负（赔率）</th><th>总进球（赔率）</th><th>半全场（赔率）</th><th>比分（赔率）</th>
+    </tr></thead><tbody>`;
+    finished.forEach(item => {
+        const m = item.match;
+        const pred = item.pred;
+        const odds = getOdds(item.home, item.away); // 实际应从API获取
+        const actual = `${m.homeScore}:${m.awayScore}`;
+        const [h, a] = actual.split(':').map(Number);
+        const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
+        const isSPF = pred.win_draw_lose.prediction === actualSPF;
+        const isRQ = pred.handicap.prediction === actualSPF;
+        const total = h + a;
+        const actualTG = total > 2.5 ? '大球' : '小球';
+        const isTG = pred.total_goals.prediction === actualTG;
+        const isHF = pred.half_full.prediction === actualSPF;
+        const isCS = pred.correct_score.prediction === actual;
+
+        html += `<tr>
+            <td>${m.time}</td>
+            <td><span class="flag">${flagMap[m.home] || '🏳️'}</span>${item.home} vs ${item.away}<span class="flag">${flagMap[m.away] || '🏳️'}</span></td>
+            <td><span class="badge badge-${isSPF ? 'green' : 'red'}">${actual}</span></td>
+            <td>${pred.win_draw_lose.prediction} (${odds.win}) <span class="badge badge-${isSPF ? 'green' : 'red'}">${isSPF ? '✓' : '✗'}</span></td>
+            <td>${pred.handicap.prediction} (${odds.h_odds}) <span class="badge badge-${isRQ ? 'green' : 'red'}">${isRQ ? '✓' : '✗'}</span></td>
+            <td>${pred.total_goals.prediction} (${1.9}) <span class="badge badge-${isTG ? 'green' : 'red'}">${isTG ? '✓' : '✗'}</span></td>
+            <td>${pred.half_full.prediction} (${3.5}) <span class="badge badge-${isHF ? 'green' : 'red'}">${isHF ? '✓' : '✗'}</span></td>
+            <td>${pred.correct_score.prediction} (${6.0}) <span class="badge badge-${isCS ? 'green' : 'red'}">${isCS ? '✓' : '✗'}</span></td>
+        </tr>`;
+    });
+    html += `</tbody></table><div class="caption-text">✓ 表示预测正确，✗ 表示预测错误</div></div>`;
+
+    // 未开始表格
+    html += `<div class="card"><h2>⏳ 未开始比赛（使用最佳玩法「${bestMethod}」预测）</h2><table><thead><tr>
+        <th>时间</th><th>比赛双方</th><th>预测结果</th><th>胜平负（赔率）</th><th>让球胜平负（赔率）</th><th>总进球（赔率）</th><th>半全场（赔率）</th><th>比分（赔率）</th>
+    </tr></thead><tbody>`;
+    upcoming.forEach(item => {
+        const m = item.match;
+        const pred = item.pred;
+        const odds = getOdds(item.home, item.away);
+        const isBest = (method) => method === bestMethod;
+
+        html += `<tr>
+            <td>${m.time}</td>
+            <td><span class="flag">${flagMap[m.home] || '🏳️'}</span>${item.home} vs ${item.away}<span class="flag">${flagMap[m.away] || '🏳️'}</span></td>
+            <td><span class="badge badge-yellow">待定</span></td>
+            <td>${pred.win_draw_lose.prediction} (${odds.win}) ${isBest('胜平负') ? '⭐' : ''}</td>
+            <td>${pred.handicap.prediction} (${odds.h_odds}) ${isBest('让球胜平负') ? '⭐' : ''}</td>
+            <td>${pred.total_goals.prediction} (${1.9}) ${isBest('总进球') ? '⭐' : ''}</td>
+            <td>${pred.half_full.prediction} (${3.5}) ${isBest('半全场') ? '⭐' : ''}</td>
+            <td>${pred.correct_score.prediction} (${6.0}) ${isBest('正确比分') ? '⭐' : ''}</td>
+        </tr>`;
+    });
+    html += `</tbody></table><div style="margin-top:8px; font-size:0.8rem; color:#64748b;">⭐ 标记为「最佳玩法（${bestMethod}）」的预测结果，其他玩法仅供参考。</div></div>`;
+
+    html += `<div class="footer-note">数据来源：Football-Data.org · 预测由 DeepSeek 生成 · 已完赛预测已缓存</div>`;
+    app.innerHTML = html;
+}
+
+// ---------- 启动 ----------
+init();
+</script>
+</body>
+</html>
