@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚽ DeepSeek 世界杯智能预测</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { font-family: 'Space Grotesk', sans-serif; }
+        body { background-color: #f8fafc; transition: background 0.3s; }
+        body.dark-mode { background-color: #0b0f19; color: #e2e8f0; }
+        .glass-card {
+            background: rgba(255,255,255,0.75);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        body.dark-mode .glass-card {
+            background: rgba(20,30,50,0.7);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .rank-bar { background: linear-gradient(90deg, #3b82f6, #8b5cf6); }
+        .pred-badge {
+            background: #1e293b;
+            color: #facc15;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        body.dark-mode .pred-badge { background: #334155; }
+        .loading-shimmer {
+            animation: shimmer 1.5s infinite;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        body.dark-mode .loading-shimmer {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 200% 100%;
+        }
+        .flag-emoji { font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif; }
+        .ai-badge {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">⚽</span>
+                <span class="font-bold text-xl text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">DeepSeek 世界杯预测</span>
+                <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">AI 驱动</span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span class="text-sm text-gray-500 hidden sm:inline" id="dataStatus">📡 加载中...</span>
+                <button id="themeToggle" class="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600">
+                    <i id="themeIcon" class="fas fa-moon"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <div class="text-center mb-10">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800">
+            🧠 DeepSeek <span class="text-blue-600">AI 胜率推演</span>
+        </h1>
+        <p class="text-gray-500 mt-2 flex items-center justify-center gap-2 flex-wrap">
+            <span><i class="far fa-calendar-alt"></i> <span id="todayDate">2026-06-17</span></span>
+            <span class="hidden sm:inline">|</span>
+            <span class="bg-yellow-100 text-yellow-700 px-3 py-0.5 rounded-full text-xs font-medium">
+                <i class="fas fa-robot"></i> 由 DeepSeek 大模型实时生成
+            </span>
+        </p>
+    </div>
+
+    <div class="space-y-4 mb-12" id="matchList">
+        <div class="glass-card rounded-xl p-5 text-center text-gray-400">
+            <i class="fas fa-spinner fa-spin mr-2"></i> 加载比赛数据...
+        </div>
+    </div>
+
+    <div class="mb-8">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-trophy text-yellow-500 mr-2"></i>预测收益榜</h2>
+            <span class="text-xs text-gray-400">模拟数据</span>
+        </div>
+        <div class="glass-card rounded-2xl p-4 md:p-6 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="text-gray-500 border-b border-gray-200">
+                    <tr>
+                        <th class="py-3 text-left font-medium">#</th>
+                        <th class="py-3 text-left font-medium">用户</th>
+                        <th class="py-3 text-left font-medium hidden sm:table-cell">场次</th>
+                        <th class="py-3 text-right font-medium">收益 (¥)</th>
+                        <th class="py-3 text-right font-medium hidden md:table-cell">胜率</th>
+                    </tr>
+                </thead>
+                <tbody id="rankTableBody">
+                    <tr><td colspan="5" class="text-center py-4 text-gray-400">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="text-center text-xs text-gray-400 border-t border-gray-200 pt-6 mt-6">
+        <p>⚡ 预测结果由 DeepSeek 大模型生成，数据来源 OpenFootball。</p>
+        <p class="mt-1">⚠️ 仅供技术交流与娱乐参考，不构成投注建议。</p>
+    </div>
+</main>
+
+<script>
+// ================================================================
+// 1. 深色模式
+// ================================================================
+(function() {
+    let theme = 'light';
+    try {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'dark' || saved === 'light') theme = saved;
+        else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) theme = 'dark';
+    } catch(e) {}
+    document.body.classList.toggle('dark-mode', theme === 'dark');
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+})();
+
+document.getElementById('themeToggle')?.addEventListener('click', function() {
+    const body = document.body;
+    const icon = document.getElementById('themeIcon');
+    const isDark = body.classList.toggle('dark-mode');
+    if (icon) icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+    try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch(e) {}
+});
+
+// ================================================================
+// 2. 配置与数据
+// ================================================================
+const DATA_URL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+
+const elo = {
+    'Brazil': 2100, 'Argentina': 2080, 'France': 2050, 'England': 2030,
+    'Germany': 2000, 'Spain': 1980, 'Portugal': 1960, 'Netherlands': 1940,
+    'Italy': 1920, 'Belgium': 1900, 'Mexico': 1880, 'Uruguay': 1860,
+    'Croatia': 1840, 'Denmark': 1820, 'Switzerland': 1800, 'USA': 1780,
+    'Senegal': 1760, 'Japan': 1740, 'South Korea': 1720, 'Australia': 1700,
+    'Ecuador': 1680, 'Ghana': 1660, 'Morocco': 1640, 'Nigeria': 1620,
+    'Serbia': 1600, 'Poland': 1580, 'Ukraine': 1560, 'Austria': 1540,
+    'Wales': 1520, 'Scotland': 1500, 'Czech Republic': 1480, 'South Africa': 1460,
+    'Canada': 1440, 'New Zealand': 1420, 'Costa Rica': 1400, 'Panama': 1380
+};
+const DEFAULT_ELO = 1500;
+
+const flagMap = {
+    'Brazil': '🇧🇷', 'Argentina': '🇦🇷', 'France': '🇫🇷', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Germany': '🇩🇪', 'Spain': '🇪🇸', 'Portugal': '🇵🇹', 'Netherlands': '🇳🇱',
+    'Italy': '🇮🇹', 'Belgium': '🇧🇪', 'Mexico': '🇲🇽', 'Uruguay': '🇺🇾',
+    'Croatia': '🇭🇷', 'Denmark': '🇩🇰', 'Switzerland': '🇨🇭', 'USA': '🇺🇸',
+    'Senegal': '🇸🇳', 'Japan': '🇯🇵', 'South Korea': '🇰🇷', 'Australia': '🇦🇺',
+    'Ecuador': '🇪🇨', 'Ghana': '🇬🇭', 'Morocco': '🇲🇦', 'Nigeria': '🇳🇬',
+    'Serbia': '🇷🇸', 'Poland': '🇵🇱', 'Ukraine': '🇺🇦', 'Austria': '🇦🇹',
+    'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Czech Republic': '🇨🇿', 'South Africa': '🇿🇦',
+    'Canada': '🇨🇦', 'New Zealand': '🇳🇿', 'Costa Rica': '🇨🇷', 'Panama': '🇵🇦'
+};
+
+// ================================================================
+// 3. 调用后端 DeepSeek API
+// ================================================================
+async function getAIPrediction(home, away) {
+    const homeElo = elo[home] || DEFAULT_ELO;
+    const awayElo = elo[away] || DEFAULT_ELO;
+
+    try {
+        const response = await fetch('/api/predict', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                home: home,
+                away: away,
+                homeElo: homeElo,
+                awayElo: awayElo
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || '预测失败');
+        }
+
+        return result.data;
+
+    } catch (error) {
+        console.error('❌ AI预测请求失败:', error.message);
+        // 返回一个降级结果（展示错误但不让页面崩溃）
+        return {
+            result: '预测异常',
+            homeScore: '?',
+            awayScore: '?',
+            analysis: error.message || 'AI服务暂时不可用'
+        };
+    }
+}
+
+// ================================================================
+// 4. 获取比赛数据 + 渲染
+// ================================================================
+async function fetchAndRender() {
+    const container = document.getElementById('matchList');
+    const statusEl = document.getElementById('dataStatus');
+
+    try {
+        statusEl.textContent = '📡 获取比赛数据...';
+        const response = await fetch(DATA_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        statusEl.textContent = '✅ 数据已同步';
+
+        const finishedMatches = data.matches
+            .filter(m => m.score1 !== undefined && m.score1 !== null && m.score1 !== '')
+            .slice(0, 10);
+
+        if (finishedMatches.length === 0) {
+            container.innerHTML = `<div class="glass-card rounded-xl p-8 text-center text-gray-500">📭 暂无已完赛数据</div>`;
+            return;
+        }
+
+        // 更新日期
+        if (finishedMatches[0]?.date) {
+            document.getElementById('todayDate').textContent = finishedMatches[0].date;
+        }
+
+        container.innerHTML = '';
+        statusEl.textContent = '🤖 AI 正在推理...';
+
+        // 逐场比赛调用 DeepSeek（为了防止并发过高，用 for 循环顺序执行）
+        for (let i = 0; i < finishedMatches.length; i++) {
+            const match = finishedMatches[i];
+            const home = match.team1 || 'Unknown';
+            const away = match.team2 || 'Unknown';
+            const homeScore = match.score1 !== undefined ? match.score1 : '-';
+            const awayScore = match.score2 !== undefined ? match.score2 : '-';
+            const homeFlag = flagMap[home] || '🏳️';
+            const awayFlag = flagMap[away] || '🏳️';
+
+            // 显示“预测中”的占位卡片
+            const card = document.createElement('div');
+            card.id = `match-${i}`;
+            card.className = 'glass-card rounded-xl p-5 shadow-sm border border-gray-100/50';
+            card.innerHTML = `
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <div class="text-right">
+                            <div class="text-2xl flag-emoji">${homeFlag}</div>
+                            <div class="font-bold text-gray-800 text-sm">${home}</div>
+                        </div>
+                        <div class="text-2xl md:text-3xl font-black text-gray-800">
+                            ${homeScore} <span class="text-gray-400 mx-1">:</span> ${awayScore}
+                        </div>
+                        <div class="text-left">
+                            <div class="text-2xl flag-emoji">${awayFlag}</div>
+                            <div class="font-bold text-gray-800 text-sm">${away}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 text-sm text-gray-400">
+                        <i class="fas fa-spinner fa-spin"></i> AI 预测中...
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+
+            // 调用 DeepSeek 后端
+            const prediction = await getAIPrediction(home, away);
+
+            // 更新卡片显示预测结果
+            const resultText = prediction.result || '--';
+            const predHome = prediction.homeScore ?? '?';
+            const predAway = prediction.awayScore ?? '?';
+            const analysis = prediction.analysis || '';
+
+            // 根据结果设置徽章颜色
+            let resultColor = 'bg-gray-500';
+            if (resultText.includes('主队胜')) resultColor = 'bg-green-500';
+            else if (resultText.includes('客队胜')) resultColor = 'bg-blue-500';
+            else if (resultText.includes('平局')) resultColor = 'bg-yellow-500';
+
+            const updatedCard = document.getElementById(`match-${i}`);
+            if (updatedCard) {
+                updatedCard.innerHTML = `
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="flex items-center gap-4 flex-wrap">
+                            <div class="text-right">
+                                <div class="text-2xl flag-emoji">${homeFlag}</div>
+                                <div class="font-bold text-gray-800 dark:text-white text-sm">${home}</div>
+                            </div>
+                            <div class="text-2xl md:text-3xl font-black text-gray-800 dark:text-white">
+                                ${homeScore} <span class="text-gray-400 mx-1">:</span> ${awayScore}
+                            </div>
+                            <div class="text-left">
+                                <div class="text-2xl flag-emoji">${awayFlag}</div>
+                                <div class="font-bold text-gray-800 dark:text-white text-sm">${away}</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 bg-gray-50/50 dark:bg-gray-800/30 p-2 rounded-lg max-w-full">
+                            <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">🧠 DeepSeek</span>
+                            <span class="text-xs text-white ${resultColor} px-2 py-0.5 rounded-full font-bold">${resultText}</span>
+                            <span class="text-sm font-bold text-purple-600 dark:text-purple-400">
+                                ${predHome} : ${predAway}
+                            </span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[120px] md:max-w-[200px]" title="${analysis}">
+                                ${analysis}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 更新状态
+            statusEl.textContent = `🤖 AI 推理中 (${i+1}/${finishedMatches.length})`;
+        }
+
+        statusEl.textContent = `✅ 全部预测完成 (${finishedMatches.length} 场)`;
+
+    } catch (error) {
+        console.error('❌ 错误:', error);
+        statusEl.textContent = '❌ 加载失败';
+        container.innerHTML = `
+            <div class="glass-card rounded-xl p-8 text-center text-red-500">
+                <p>⚠️ 数据加载失败</p>
+                <p class="text-xs mt-2">${error.message}</p>
+                <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">🔄 重试</button>
+            </div>
+        `;
+    }
+}
+
+// ================================================================
+// 5. 排行榜
+// ================================================================
+const rankData = [
+    { name: 'DeepSeek AI', count: 38, profit: 15800, rate: 82 },
+    { name: '林亦 LYi', count: 42, profit: 11230, rate: 74 },
+    { name: '预测大师', count: 35, profit: 9820, rate: 71 },
+    { name: '足彩小王子', count: 40, profit: 8560, rate: 65 },
+    { name: '数据狂人', count: 29, profit: 7230, rate: 69 },
+];
+
+function renderRanking() {
+    const tbody = document.getElementById('rankTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    rankData.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/40';
+        let medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index+1}`;
+        tr.innerHTML = `
+            <td class="py-3 font-bold text-gray-600 dark:text-gray-400">${medal}</td>
+            <td class="py-3 font-medium text-gray-800 dark:text-white">${item.name}</td>
+            <td class="py-3 text-gray-500 dark:text-gray-400 hidden sm:table-cell">${item.count}场</td>
+            <td class="py-3 text-right font-bold text-green-600 dark:text-green-400">+${item.profit.toLocaleString()}</td>
+            <td class="py-3 text-right hidden md:table-cell">
+                <div class="flex items-center justify-end gap-2">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">${item.rate}%</span>
+                    <div class="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full rank-bar" style="width: ${item.rate}%;"></div>
+                    </div>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ================================================================
+// 6. 启动
+// ================================================================
+renderRanking();
+fetchAndRender();
+</script>
+</body>
+</html>
