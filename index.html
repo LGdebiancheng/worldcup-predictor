@@ -112,6 +112,15 @@
         }
         .daily-item .date { font-weight: 600; }
         .daily-item .amount { font-weight: 700; }
+        .bet-cell {
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        .bet-cell .pred { font-weight: 500; }
+        .bet-cell .profit { font-weight: 600; }
+        .bet-cell .profit.positive { color: #16a34a; }
+        .bet-cell .profit.negative { color: #dc2626; }
+        .bet-cell .profit.zero { color: #6b7280; }
     </style>
 </head>
 <body>
@@ -522,26 +531,61 @@ function renderApp(finished, upcoming, stats, bestMethod, rates, totalPredicted,
     });
     html += `</tbody></table><div class="caption-text">✓ 表示预测正确，✗ 表示预测错误</div></div>`;
 
-    // ---------- 投注明细 ----------
-    if (betRecords.length > 0) {
-        html += `<div class="card"><h2>📋 投注明细（每玩法每场下注100元）</h2><table><thead><tr>
-            <th>日期</th><th>比赛</th><th>玩法</th><th>预测</th><th>实际</th><th>赔率</th><th>盈亏</th>
+    // ---------- 投注明细（宽表格，按比赛聚合） ----------
+    // 构建按比赛聚合的数据
+    const matchBets = {};
+    betRecords.forEach(rec => {
+        const key = rec.date + '|' + rec.match;
+        if (!matchBets[key]) {
+            matchBets[key] = {
+                date: rec.date,
+                match: rec.match,
+                methods: {},
+                totalProfit: 0
+            };
+        }
+        matchBets[key].methods[rec.method] = {
+            prediction: rec.prediction,
+            profit: rec.profit,
+            actual: rec.actual,
+            correct: rec.correct,
+            odds: rec.odds
+        };
+        matchBets[key].totalProfit += rec.profit;
+    });
+
+    const matchBetRows = Object.values(matchBets);
+    matchBetRows.sort((a,b) => a.date.localeCompare(b.date) || a.match.localeCompare(b.match));
+
+    if (matchBetRows.length > 0) {
+        html += `<div class="card"><h2>📋 投注明细（每场每玩法下注100元）</h2><table><thead><tr>
+            <th>日期</th><th>比赛</th>
+            <th>胜平负</th><th>让球</th><th>总进球</th><th>半全场</th><th>比分</th>
+            <th>总盈亏</th>
         </tr></thead><tbody>`;
-        betRecords.sort((a,b) => a.date.localeCompare(b.date) || a.method.localeCompare(b.method));
-        betRecords.forEach(rec => {
-            const profit = rec.profit;
-            const cls = profit > 0 ? 'profit-positive' : (profit < 0 ? 'profit-negative' : 'profit-zero');
+        matchBetRows.forEach(row => {
+            const methodsOrder = ['胜平负', '让球胜平负', '总进球数', '半全场', '正确比分'];
+            let cells = '';
+            methodsOrder.forEach(method => {
+                const data = row.methods[method];
+                if (data) {
+                    const profit = data.profit;
+                    const cls = profit > 0 ? 'positive' : (profit < 0 ? 'negative' : 'zero');
+                    cells += `<td class="bet-cell"><span class="pred">${data.prediction}</span><br><span class="profit ${cls}">${profit > 0 ? '+' : ''}${profit.toFixed(0)}</span></td>`;
+                } else {
+                    cells += `<td class="bet-cell">-</td>`;
+                }
+            });
+            const totalP = row.totalProfit;
+            const clsTotal = totalP > 0 ? 'profit-positive' : (totalP < 0 ? 'profit-negative' : 'profit-zero');
             html += `<tr>
-                <td>${rec.date}</td>
-                <td>${rec.match}</td>
-                <td>${rec.method}</td>
-                <td>${rec.prediction}</td>
-                <td>${rec.actual}</td>
-                <td>${rec.odds.toFixed(2)}</td>
-                <td class="${cls}">${profit > 0 ? '+' : ''}${profit.toFixed(0)}</td>
+                <td>${row.date}</td>
+                <td>${row.match}</td>
+                ${cells}
+                <td class="${clsTotal}">${totalP > 0 ? '+' : ''}${totalP.toFixed(0)}</td>
             </tr>`;
         });
-        html += `</tbody></table><div class="caption-text">每笔投注100元，盈利 = 100*(赔率-1)，亏损 = -100</div></div>`;
+        html += `</tbody></table><div class="caption-text">每笔投注100元，盈利 = 100*(赔率-1)，亏损 = -100；总盈亏为该场所有玩法盈亏之和</div></div>`;
     }
 
     // ---------- 未完赛 ----------
