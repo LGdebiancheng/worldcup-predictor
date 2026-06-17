@@ -1,9 +1,5 @@
 {
   "name": "worldcup-ai-predictor",
   "version": "1.0.0",
-  "description": "AI World Cup Predictor with DeepSeek",
-  "main": "api/predict.js",
-  "dependencies": {
-    "axios": "^1.6.0"
-  }
+  "description": "AI World Cup Predictor with DeepSeek"
 }
