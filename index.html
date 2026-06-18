@@ -279,7 +279,7 @@ function renderApp(state) {
         </div>
     `;
 
-    // ----- 已完赛表格（修复半全场正确性判断） -----
+    // ----- 已完赛表格（修复让球和半全场判断） -----
     html += `<div class="card"><h2>✅ 已完赛比赛（经多次推演，展示最优结果）</h2><table><thead><tr>
         <th>时间</th><th>比赛双方</th><th>结果</th>
         <th>胜平负</th><th>让球</th><th>总进球</th><th>半全场</th><th>比分</th><th>推演信息</th>
@@ -297,15 +297,20 @@ function renderApp(state) {
         }
         const predTotal = parseInt(pred.total_goals.prediction);
         const isSPF = pred.win_draw_lose.prediction === actualSPF;
-        const isRQ = pred.handicap.prediction === actualSPF;
+        
+        // 让球：使用后端计算的 actualHandicapResult
+        const isRQ = item.actualHandicapResult === pred.handicap.prediction;
+        
         const isTG = !isNaN(predTotal) && predTotal === totalActual;
-        // 修复半全场正确性判断：取预测的第一个字映射到主胜/平/客胜
+        
+        // 半全场：取第一个字比较
         const hfPrefix = pred.half_full.prediction.charAt(0);
         let hfPredSPF = '';
         if (hfPrefix === '胜') hfPredSPF = '主队胜';
         else if (hfPrefix === '负') hfPredSPF = '客队胜';
         else if (hfPrefix === '平') hfPredSPF = '平局';
         const isHF = hfPredSPF === actualSPF;
+        
         const isCS = pred.correct_score.prediction === actual;
 
         html += `<tr>
