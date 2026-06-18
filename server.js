@@ -100,7 +100,7 @@ function getOddsForMethod(method, prediction) {
     return 1.0;
 }
 
-// ---------- 从 API-Football 获取真实赔率 ----------
+// ---------- 从 API-Football 获取真实赔率（可配置联赛） ----------
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) {
@@ -108,11 +108,16 @@ async function fetchRealOdds(home, away) {
         return null;
     }
 
+    // 可配置联赛 ID，2=欧冠，39=英超，1=世界杯（注意：世界杯可能暂无数据）
+    const leagueId = process.env.ODDS_LEAGUE_ID || 2; // 默认使用欧冠
+    console.log(`🔍 使用联赛 ID: ${leagueId} 获取赔率`);
+
     const homeEn = teamNameMapForOdds[home] || home;
     const awayEn = teamNameMapForOdds[away] || away;
 
     try {
-        const searchUrl = `https://v3.football.api-sports.io/fixtures?team=${encodeURIComponent(homeEn)}&season=2026`;
+        // 1. 搜索比赛（根据联赛和球队）
+        const searchUrl = `https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=2025&team=${encodeURIComponent(homeEn)}`;
         const searchResp = await fetch(searchUrl, {
             headers: {
                 'x-rapidapi-key': API_KEY,
@@ -148,6 +153,7 @@ async function fetchRealOdds(home, away) {
 
         const fixtureId = fixture.fixture.id;
 
+        // 2. 获取赔率
         const oddsUrl = `https://v3.football.api-sports.io/odds?fixture=${fixtureId}`;
         const oddsResp = await fetch(oddsUrl, {
             headers: {
@@ -189,11 +195,6 @@ async function fetchRealOdds(home, away) {
                     if (value.value === 'Home') h_odds = parseFloat(value.odd);
                     else if (value.value === 'Away') a_odds = parseFloat(value.odd);
                     else d_odds = parseFloat(value.odd);
-                    // 尝试提取让球盘口
-                    if (value.value !== 'Home' && value.value !== 'Away' && value.value !== 'Draw') {
-                        const parsed = parseFloat(value.value);
-                        if (!isNaN(parsed)) handicap = parsed;
-                    }
                 }
             } else if (bet.id === 3) {
                 for (const value of bet.values) {
@@ -221,7 +222,9 @@ async function fetchRealOdds(home, away) {
             half_full_odds: half_full_odds.toFixed(2),
             correct_score_odds: correct_score_odds.toFixed(2),
             handicap: handicap.toFixed(1),
-            from_real: true
+            from_real: true,
+            source: 'api-football',
+            league: leagueId
         };
 
     } catch (error) {
@@ -283,7 +286,8 @@ async function getOdds(home, away, isFinished = false) {
         half_full_odds: (3.0 + (Math.random() - 0.5) * 1.0).toFixed(2),
         correct_score_odds: (6.0 + (Math.random() - 0.5) * 2.0).toFixed(2),
         handicap: (diff > 50 ? '-0.5' : diff < -50 ? '+0.5' : '0'),
-        from_real: false
+        from_real: false,
+        source: 'elo'
     };
     oddsCache.set(key, { odds, timestamp: now });
     return odds;
@@ -458,7 +462,7 @@ async function runFinishedSimulation() {
                     actualHandicapResult: actualHandicapResult,
                     handicap: handicap
                 });
-                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
+                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''} 赔率来源: ${odds.source}`);
             }
         }
 
@@ -575,7 +579,6 @@ function updateStatistics(finishedMatches) {
         stats['胜平负'].correct += isSPF ? weight : 0;
         stats['胜平负'].total += weight;
 
-        // 让球：使用实际让球结果判断
         const isRQ = cached.actualHandicapResult === pred.handicap.prediction;
         stats['让球胜平负'].correct += isRQ ? weight : 0;
         stats['让球胜平负'].total += weight;
@@ -585,7 +588,6 @@ function updateStatistics(finishedMatches) {
         stats['总进球数'].correct += isTG ? weight : 0;
         stats['总进球数'].total += weight;
 
-        // 半全场：取第一个字比较
         const hfPrefix = pred.half_full.prediction.charAt(0);
         let hfPredSPF = '';
         if (hfPrefix === '胜') hfPredSPF = '主队胜';
