@@ -100,7 +100,7 @@ function getOddsForMethod(method, prediction) {
     return 1.0;
 }
 
-// ---------- 从 API-Football 获取真实赔率（扩展半全场和比分） ----------
+// ---------- 从 API-Football 获取真实赔率 ----------
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) {
@@ -175,30 +175,35 @@ async function fetchRealOdds(home, away) {
         let total_odds = 1.9;
         let half_full_odds = 3.0;
         let correct_score_odds = 6.0;
+        let handicap = 0;
 
         for (const bet of bookmaker.bets) {
-            if (bet.id === 1) { // 胜平负
+            if (bet.id === 1) {
                 for (const value of bet.values) {
                     if (value.value === 'Home') win = parseFloat(value.odd);
                     else if (value.value === 'Draw') draw = parseFloat(value.odd);
                     else if (value.value === 'Away') lose = parseFloat(value.odd);
                 }
-            } else if (bet.id === 2) { // 让球
+            } else if (bet.id === 2) {
                 for (const value of bet.values) {
                     if (value.value === 'Home') h_odds = parseFloat(value.odd);
                     else if (value.value === 'Away') a_odds = parseFloat(value.odd);
                     else d_odds = parseFloat(value.odd);
+                    // 尝试提取让球盘口
+                    if (value.value !== 'Home' && value.value !== 'Away' && value.value !== 'Draw') {
+                        const parsed = parseFloat(value.value);
+                        if (!isNaN(parsed)) handicap = parsed;
+                    }
                 }
-            } else if (bet.id === 3) { // 大小球
+            } else if (bet.id === 3) {
                 for (const value of bet.values) {
                     total_odds = parseFloat(value.odd);
                 }
-            } else if (bet.id === 12) { // 半全场 (常见 id)
-                // 取第一个赔率作为代表
+            } else if (bet.id === 12) {
                 if (bet.values && bet.values.length > 0) {
                     half_full_odds = parseFloat(bet.values[0].odd);
                 }
-            } else if (bet.id === 16) { // 正确比分
+            } else if (bet.id === 16) {
                 if (bet.values && bet.values.length > 0) {
                     correct_score_odds = parseFloat(bet.values[0].odd);
                 }
@@ -215,7 +220,7 @@ async function fetchRealOdds(home, away) {
             total_odds: total_odds.toFixed(2),
             half_full_odds: half_full_odds.toFixed(2),
             correct_score_odds: correct_score_odds.toFixed(2),
-            handicap: '0',
+            handicap: handicap.toFixed(1),
             from_real: true
         };
 
@@ -258,7 +263,7 @@ async function getOdds(home, away, isFinished = false) {
         return realOdds;
     }
 
-    // 备选：ELO 模拟 + 动态生成赔率
+    // 备选：ELO 模拟
     const eloH = getElo(home);
     const eloA = getElo(away);
     const diff = eloH - eloA;
@@ -277,7 +282,7 @@ async function getOdds(home, away, isFinished = false) {
         total_odds: (1.9 + (Math.random() - 0.5) * 0.6).toFixed(2),
         half_full_odds: (3.0 + (Math.random() - 0.5) * 1.0).toFixed(2),
         correct_score_odds: (6.0 + (Math.random() - 0.5) * 2.0).toFixed(2),
-        handicap: '0',
+        handicap: (diff > 50 ? '-0.5' : diff < -50 ? '+0.5' : '0'),
         from_real: false
     };
     oddsCache.set(key, { odds, timestamp: now });
@@ -429,13 +434,29 @@ async function runFinishedSimulation() {
                 const odds = await getOdds(home, away, true);
                 const isUpsetFlag = isUpsetWithOdds(home, away, actualScore, odds);
                 const weight = isUpsetFlag ? 0.5 : 1.0;
+
+                // 计算实际让球结果
+                const [h, a] = actualScore.split(':').map(Number);
+                let handicap = 0;
+                if (odds.handicap) {
+                    const hVal = parseFloat(odds.handicap);
+                    if (!isNaN(hVal)) handicap = hVal;
+                }
+                const handicapHomeScore = h + handicap;
+                let actualHandicapResult = '';
+                if (handicapHomeScore > a) actualHandicapResult = '主队赢盘';
+                else if (handicapHomeScore < a) actualHandicapResult = '客队赢盘';
+                else actualHandicapResult = '走盘';
+
                 optimalCache.set(matchId, {
                     pred: bestPred,
                     attempt: bestAttempt,
                     score: bestScore,
                     confidence: bestConfidence,
                     weight: weight,
-                    odds: odds
+                    odds: odds,
+                    actualHandicapResult: actualHandicapResult,
+                    handicap: handicap
                 });
                 console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
             }
@@ -554,7 +575,8 @@ function updateStatistics(finishedMatches) {
         stats['胜平负'].correct += isSPF ? weight : 0;
         stats['胜平负'].total += weight;
 
-        const isRQ = pred.handicap.prediction === actualSPF;
+        // 让球：使用实际让球结果判断
+        const isRQ = cached.actualHandicapResult === pred.handicap.prediction;
         stats['让球胜平负'].correct += isRQ ? weight : 0;
         stats['让球胜平负'].total += weight;
 
@@ -563,7 +585,13 @@ function updateStatistics(finishedMatches) {
         stats['总进球数'].correct += isTG ? weight : 0;
         stats['总进球数'].total += weight;
 
-        const isHF = pred.half_full.prediction === actualSPF;
+        // 半全场：取第一个字比较
+        const hfPrefix = pred.half_full.prediction.charAt(0);
+        let hfPredSPF = '';
+        if (hfPrefix === '胜') hfPredSPF = '主队胜';
+        else if (hfPrefix === '负') hfPredSPF = '客队胜';
+        else if (hfPrefix === '平') hfPredSPF = '平局';
+        const isHF = hfPredSPF === actualSPF;
         stats['半全场'].correct += isHF ? weight : 0;
         stats['半全场'].total += weight;
 
@@ -690,7 +718,8 @@ app.get('/api/state', (req, res) => {
             totalAttempts: totalAttempts,
             confidence: cached ? cached.confidence : null,
             weight: cached ? cached.weight : 1.0,
-            odds: odds
+            odds: odds,
+            actualHandicapResult: cached ? cached.actualHandicapResult : null
         };
     });
 
