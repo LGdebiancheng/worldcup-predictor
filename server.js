@@ -100,7 +100,7 @@ function getOddsForMethod(method, prediction) {
     return 1.0;
 }
 
-// ---------- 从 API-Football 获取真实赔率 ----------
+// ---------- 从 API-Football 获取真实赔率（扩展半全场和比分） ----------
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) {
@@ -173,23 +173,34 @@ async function fetchRealOdds(home, away) {
         let win = 2.0, draw = 3.0, lose = 2.5;
         let h_odds = 1.9, d_odds = 3.2, a_odds = 2.0;
         let total_odds = 1.9;
+        let half_full_odds = 3.0;
+        let correct_score_odds = 6.0;
 
         for (const bet of bookmaker.bets) {
-            if (bet.id === 1) {
+            if (bet.id === 1) { // 胜平负
                 for (const value of bet.values) {
                     if (value.value === 'Home') win = parseFloat(value.odd);
                     else if (value.value === 'Draw') draw = parseFloat(value.odd);
                     else if (value.value === 'Away') lose = parseFloat(value.odd);
                 }
-            } else if (bet.id === 2) {
+            } else if (bet.id === 2) { // 让球
                 for (const value of bet.values) {
                     if (value.value === 'Home') h_odds = parseFloat(value.odd);
                     else if (value.value === 'Away') a_odds = parseFloat(value.odd);
                     else d_odds = parseFloat(value.odd);
                 }
-            } else if (bet.id === 3) {
+            } else if (bet.id === 3) { // 大小球
                 for (const value of bet.values) {
                     total_odds = parseFloat(value.odd);
+                }
+            } else if (bet.id === 12) { // 半全场 (常见 id)
+                // 取第一个赔率作为代表
+                if (bet.values && bet.values.length > 0) {
+                    half_full_odds = parseFloat(bet.values[0].odd);
+                }
+            } else if (bet.id === 16) { // 正确比分
+                if (bet.values && bet.values.length > 0) {
+                    correct_score_odds = parseFloat(bet.values[0].odd);
                 }
             }
         }
@@ -202,6 +213,8 @@ async function fetchRealOdds(home, away) {
             d_odds: d_odds.toFixed(2),
             a_odds: a_odds.toFixed(2),
             total_odds: total_odds.toFixed(2),
+            half_full_odds: half_full_odds.toFixed(2),
+            correct_score_odds: correct_score_odds.toFixed(2),
             handicap: '0',
             from_real: true
         };
@@ -245,6 +258,7 @@ async function getOdds(home, away, isFinished = false) {
         return realOdds;
     }
 
+    // 备选：ELO 模拟 + 动态生成赔率
     const eloH = getElo(home);
     const eloA = getElo(away);
     const diff = eloH - eloA;
@@ -260,7 +274,9 @@ async function getOdds(home, away, isFinished = false) {
         h_odds: (1 / (pWin / total) * 0.95).toFixed(2),
         d_odds: (1 / (pDraw / total) * 0.95).toFixed(2),
         a_odds: (1 / (pLose / total) * 0.95).toFixed(2),
-        total_odds: (1.9).toFixed(2),
+        total_odds: (1.9 + (Math.random() - 0.5) * 0.6).toFixed(2),
+        half_full_odds: (3.0 + (Math.random() - 0.5) * 1.0).toFixed(2),
+        correct_score_odds: (6.0 + (Math.random() - 0.5) * 2.0).toFixed(2),
         handicap: '0',
         from_real: false
     };
@@ -571,7 +587,7 @@ function updateStatistics(finishedMatches) {
     global.rates = rates;
     global.bestMethod = bestMethod;
 
-    // ---------- 投注明细（修复：总进球数使用预测值，比分和总进球逻辑一致） ----------
+    // ---------- 投注明细 ----------
     const betRecords = [];
     finishedMatches.forEach(match => {
         const actualScore = `${match.homeScore}:${match.awayScore}`;
@@ -580,7 +596,7 @@ function updateStatistics(finishedMatches) {
 
         const cached = optimalCache.get(matchId);
         const pred = cached.pred;
-        const odds = cached.odds || { win: 2.0, draw: 3.0, lose: 2.5, h_odds: 1.9, d_odds: 3.2, a_odds: 2.0, total_odds: 1.9 };
+        const odds = cached.odds || { win: 2.0, draw: 3.0, lose: 2.5, h_odds: 1.9, d_odds: 3.2, a_odds: 2.0, total_odds: 2.0, half_full_odds: 3.0, correct_score_odds: 6.0 };
         const date = match.date ? match.date.substring(0,10) : '2026-06-17';
 
         methods.forEach(method => {
@@ -591,14 +607,12 @@ function updateStatistics(finishedMatches) {
                 case '让球胜平负': prediction = pred.handicap.prediction; displayPrediction = prediction; break;
                 case '总进球数':
                     prediction = pred.total_goals.prediction;
-                    // 显示为 "X球" 格式
                     displayPrediction = prediction + '球';
                     break;
                 case '半全场': prediction = pred.half_full.prediction; displayPrediction = prediction; break;
                 case '正确比分': prediction = pred.correct_score.prediction; displayPrediction = prediction; break;
             }
 
-            // 根据玩法和预测结果获取正确的赔率
             let oddsValue = 0;
             if (method === '胜平负') {
                 if (prediction === '主队胜') oddsValue = parseFloat(odds.win);
@@ -611,13 +625,11 @@ function updateStatistics(finishedMatches) {
                 else if (prediction === '客队赢盘') oddsValue = parseFloat(odds.a_odds);
                 if (!oddsValue || oddsValue <= 0) oddsValue = 1.9;
             } else if (method === '总进球数') {
-                // 总进球数：赔率使用 total_odds，预测值用于显示和正确判断
                 oddsValue = parseFloat(odds.total_odds) || 2.0;
-                // 但预测值已在上面设置，无需覆盖
             } else if (method === '半全场') {
-                oddsValue = 3.0;
+                oddsValue = parseFloat(odds.half_full_odds) || 3.0;
             } else if (method === '正确比分') {
-                oddsValue = 6.0;
+                oddsValue = parseFloat(odds.correct_score_odds) || 6.0;
             }
 
             const profit = calculateBetProfitWithOdds(method, prediction, actualScore, oddsValue);
@@ -626,7 +638,7 @@ function updateStatistics(finishedMatches) {
                 date: date,
                 match: `${match.home} 对 ${match.away}`,
                 method: method,
-                prediction: displayPrediction,  // 使用格式化后的显示
+                prediction: displayPrediction,
                 actual: actualScore,
                 correct: profit > 0,
                 odds: oddsValue,
