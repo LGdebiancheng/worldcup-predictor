@@ -7,8 +7,9 @@ app.use(express.static(path.join(__dirname)));
 
 // ---------- 全局状态 ----------
 let totalAttempts = 0;
-const optimalCache = new Map();     // 已完赛缓存
-const upcomingCache = new Map();    // 未开赛缓存：{ latest, best }
+const optimalCache = new Map();
+const upcomingCache = new Map();
+const oddsCache = new Map();
 let bestMethod = '胜平负';
 let methodStats = {};
 let rates = {};
@@ -28,6 +29,21 @@ const nameMap = {
     'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马',
     'Saudi Arabia': '沙特', 'Iran': '伊朗', 'Qatar': '卡塔尔', 'Cameroon': '喀麦隆',
     'Sweden': '瑞典'
+};
+
+// ---------- 队名转英文（用于API查询） ----------
+const teamNameMapForOdds = {
+    '巴西': 'Brazil', '阿根廷': 'Argentina', '法国': 'France', '英格兰': 'England',
+    '德国': 'Germany', '西班牙': 'Spain', '葡萄牙': 'Portugal', '荷兰': 'Netherlands',
+    '意大利': 'Italy', '比利时': 'Belgium', '墨西哥': 'Mexico', '乌拉圭': 'Uruguay',
+    '克罗地亚': 'Croatia', '丹麦': 'Denmark', '瑞士': 'Switzerland', '美国': 'USA',
+    '塞内加尔': 'Senegal', '日本': 'Japan', '韩国': 'South Korea', '澳大利亚': 'Australia',
+    '厄瓜多尔': 'Ecuador', '加纳': 'Ghana', '摩洛哥': 'Morocco', '尼日利亚': 'Nigeria',
+    '塞尔维亚': 'Serbia', '波兰': 'Poland', '乌克兰': 'Ukraine', '奥地利': 'Austria',
+    '威尔士': 'Wales', '苏格兰': 'Scotland', '捷克': 'Czech Republic', '南非': 'South Africa',
+    '加拿大': 'Canada', '新西兰': 'New Zealand', '哥斯达黎加': 'Costa Rica', '巴拿马': 'Panama',
+    '沙特': 'Saudi Arabia', '伊朗': 'Iran', '卡塔尔': 'Qatar', '喀麦隆': 'Cameroon',
+    '瑞典': 'Sweden'
 };
 
 // ---------- ELO 积分 ----------
@@ -69,7 +85,7 @@ const fallbackData = {
     ]
 };
 
-// ---------- 赔率配置 ----------
+// ---------- 赔率配置（备选） ----------
 const ODDS_CONFIG = {
     '胜平负': { '主队胜': 2.0, '平局': 3.0, '客队胜': 2.5 },
     '让球胜平负': { '主队赢盘': 1.9, '走盘': 3.2, '客队赢盘': 2.0 },
@@ -117,12 +133,82 @@ function calculateBetProfit(method, prediction, actualScore) {
     return correct ? stake * (odds - 1) : -stake;
 }
 
+// ---------- 从 BSD API 获取真实赔率 ----------
+async function fetchBSDOdds(home, away) {
+    const API_TOKEN = process.env.BSD_API_TOKEN;
+    if (!API_TOKEN) {
+        console.log('⚠️ BSD_API_TOKEN 未设置，使用模拟赔率');
+        return null;
+    }
+
+    const homeEn = teamNameMapForOdds[home] || home;
+    const awayEn = teamNameMapForOdds[away] || away;
+
+    try {
+        // 先获取比赛列表
+        const searchUrl = `https://api.bzzoiro.com/v2/fixtures?team=${encodeURIComponent(homeEn)}&status=finished`;
+        const searchResp = await fetch(searchUrl, {
+            headers: {
+                'Authorization': `Token ${API_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!searchResp.ok) {
+            console.log(`⚠️ BSD API 搜索失败: ${searchResp.status}`);
+            return null;
+        }
+
+        const searchData = await searchResp.json();
+        if (!searchData.data || searchData.data.length === 0) {
+            console.log(`⚠️ BSD 未找到比赛: ${home} vs ${away}`);
+            return null;
+        }
+
+        // 查找匹配的比赛
+        let fixture = null;
+        for (const item of searchData.data) {
+            const homeTeam = item.home_team?.name || '';
+            const awayTeam = item.away_team?.name || '';
+            if ((homeTeam === homeEn || awayTeam === awayEn) ||
+                (homeTeam.includes(homeEn) && awayTeam.includes(awayEn))) {
+                fixture = item;
+                break;
+            }
+        }
+
+        if (!fixture) {
+            console.log(`⚠️ BSD 未匹配到比赛: ${home} vs ${away}`);
+            return null;
+        }
+
+        // 提取赔率（BSD 返回的 odds 字段）
+        const odds = fixture.odds || {};
+        return {
+            win: odds.home_win ? odds.home_win.toFixed(2) : '2.00',
+            draw: odds.draw ? odds.draw.toFixed(2) : '3.00',
+            lose: odds.away_win ? odds.away_win.toFixed(2) : '2.50',
+            h_odds: odds.home_win ? (odds.home_win * 0.95).toFixed(2) : '1.90',
+            d_odds: odds.draw ? (odds.draw * 0.95).toFixed(2) : '3.20',
+            a_odds: odds.away_win ? (odds.away_win * 0.95).toFixed(2) : '2.00',
+            total_odds: '1.90',
+            handicap: '0',
+            from_real: true,
+            source: 'BSD'
+        };
+
+    } catch (error) {
+        console.error('❌ BSD API 调用失败:', error.message);
+        return null;
+    }
+}
+
 // ---------- 判断爆冷 ----------
-function isUpset(home, away, actualScore, homeOdds, drawOdds, awayOdds) {
-    const totalProb = 1/homeOdds + 1/drawOdds + 1/awayOdds;
-    const probHome = (1/homeOdds) / totalProb;
-    const probDraw = (1/drawOdds) / totalProb;
-    const probAway = (1/awayOdds) / totalProb;
+function isUpsetWithOdds(home, away, actualScore, odds) {
+    const totalProb = 1/parseFloat(odds.win) + 1/parseFloat(odds.draw) + 1/parseFloat(odds.lose);
+    const probHome = (1/parseFloat(odds.win)) / totalProb;
+    const probDraw = (1/parseFloat(odds.draw)) / totalProb;
+    const probAway = (1/parseFloat(odds.lose)) / totalProb;
     const [h, a] = actualScore.split(':').map(Number);
     let actualProb = 0;
     if (h > a) actualProb = probHome;
@@ -131,8 +217,29 @@ function isUpset(home, away, actualScore, homeOdds, drawOdds, awayOdds) {
     return actualProb < 0.25;
 }
 
-// ---------- 生成模拟赔率 ----------
-function generateOdds(home, away) {
+// ---------- 获取赔率（带缓存） ----------
+async function getOdds(home, away, isFinished = false) {
+    const key = `${home}_${away}`;
+    const cached = oddsCache.get(key);
+    const now = Date.now();
+
+    // 已完赛：24 小时；未开赛：3 小时
+    const ttl = isFinished ? 86400000 : 10800000;
+
+    if (cached && (now - cached.timestamp) < ttl) {
+        return cached.odds;
+    }
+
+    console.log(`🔄 [赔率] 实时获取: ${home} vs ${away}${isFinished ? ' (已完赛)' : ' (未开赛)'}`);
+    
+    // 尝试 BSD API
+    const realOdds = await fetchBSDOdds(home, away);
+    if (realOdds) {
+        oddsCache.set(key, { odds: realOdds, timestamp: now });
+        return realOdds;
+    }
+
+    // 备选：ELO 模拟
     const eloH = getElo(home);
     const eloA = getElo(away);
     const diff = eloH - eloA;
@@ -141,10 +248,19 @@ function generateOdds(home, away) {
     let pLose = 1 - pWin - pDraw;
     if (pLose < 0.1) pLose = 0.1;
     const total = pWin + pDraw + pLose;
-    const oddsWin = 1 / (pWin / total);
-    const oddsDraw = 1 / (pDraw / total);
-    const oddsLose = 1 / (pLose / total);
-    return { win: oddsWin.toFixed(2), draw: oddsDraw.toFixed(2), lose: oddsLose.toFixed(2) };
+    const odds = {
+        win: (1 / (pWin / total)).toFixed(2),
+        draw: (1 / (pDraw / total)).toFixed(2),
+        lose: (1 / (pLose / total)).toFixed(2),
+        h_odds: (1 / (pWin / total) * 0.95).toFixed(2),
+        d_odds: (1 / (pDraw / total) * 0.95).toFixed(2),
+        a_odds: (1 / (pLose / total) * 0.95).toFixed(2),
+        total_odds: (1.9).toFixed(2),
+        handicap: '0',
+        from_real: false
+    };
+    oddsCache.set(key, { odds, timestamp: now });
+    return odds;
 }
 
 // ---------- 获取比赛数据 ----------
@@ -239,7 +355,7 @@ async function callDeepSeek(home, away) {
     return JSON.parse(content);
 }
 
-// ---------- 推演已完赛（所有已完赛，每5分钟） ----------
+// ---------- 推演已完赛 ----------
 async function runFinishedSimulation() {
     console.log('🔄 [已完赛] 开始推演...');
     try {
@@ -289,17 +405,18 @@ async function runFinishedSimulation() {
             }
 
             if (bestPred) {
-                const odds = generateOdds(home, away);
-                const isUpsetFlag = isUpset(home, away, actualScore, parseFloat(odds.win), parseFloat(odds.draw), parseFloat(odds.lose));
+                const odds = await getOdds(home, away, true);
+                const isUpsetFlag = isUpsetWithOdds(home, away, actualScore, odds);
                 const weight = isUpsetFlag ? 0.5 : 1.0;
                 optimalCache.set(matchId, {
                     pred: bestPred,
                     attempt: bestAttempt,
                     score: bestScore,
                     confidence: bestConfidence,
-                    weight: weight
+                    weight: weight,
+                    odds: odds
                 });
-                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
+                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''} ${odds.from_real ? '[真实赔率]' : '[模拟赔率]'}`);
             }
         }
 
@@ -310,7 +427,7 @@ async function runFinishedSimulation() {
     }
 }
 
-// ---------- 推演未开赛（前4场，每30秒，保留最新和最佳） ----------
+// ---------- 推演未开赛 ----------
 async function runUpcomingSimulation() {
     console.log('🔄 [未开赛] 开始推演...');
     try {
@@ -333,31 +450,20 @@ async function runUpcomingSimulation() {
                 const confidence = pred.confidence || null;
                 const timestamp = new Date().toISOString();
 
-                // 获取或初始化缓存
                 let cacheEntry = upcomingCache.get(key);
                 if (!cacheEntry) {
-                    cacheEntry = {
-                        latest: null,
-                        best: null
-                    };
+                    cacheEntry = { latest: null, best: null };
                 }
 
-                // 更新最新推演
-                cacheEntry.latest = {
-                    pred: pred,
-                    confidence: confidence,
-                    timestamp: timestamp
-                };
+                cacheEntry.latest = { pred, confidence, timestamp };
 
-                // 更新最佳推演（比较 confidence）
                 if (!cacheEntry.best || (confidence !== null && (cacheEntry.best.confidence === null || confidence > cacheEntry.best.confidence))) {
-                    cacheEntry.best = {
-                        pred: pred,
-                        confidence: confidence,
-                        timestamp: timestamp
-                    };
+                    cacheEntry.best = { pred, confidence, timestamp };
                     console.log(`⭐ [未开赛] 新最佳: ${home} vs ${away} (confidence: ${confidence})`);
                 }
+
+                const odds = await getOdds(home, away, false);
+                cacheEntry.odds = odds;
 
                 upcomingCache.set(key, cacheEntry);
                 console.log(`✅ [未开赛] 完成: ${home} vs ${away}`);
@@ -435,6 +541,7 @@ function updateStatistics(finishedMatches) {
         const matchId = `${match.home}_${match.away}_${match.date}`;
         if (!optimalCache.has(matchId)) return;
         const pred = optimalCache.get(matchId).pred;
+        const odds = optimalCache.get(matchId).odds || { win: 2.0, draw: 3.0, lose: 2.5 };
         const date = match.date ? match.date.substring(0,10) : '2026-06-17';
         methods.forEach(method => {
             let prediction = '';
@@ -445,8 +552,21 @@ function updateStatistics(finishedMatches) {
                 case '半全场': prediction = pred.half_full.prediction; break;
                 case '正确比分': prediction = pred.correct_score.prediction; break;
             }
-            const profit = calculateBetProfit(method, prediction, actualScore);
-            const odds = getOddsForMethod(method, prediction);
+            let profit = 0;
+            if (method === '胜平负') {
+                const [h, a] = actualScore.split(':').map(Number);
+                const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
+                let oddsVal = 0;
+                if (prediction === '主队胜') oddsVal = parseFloat(odds.win);
+                else if (prediction === '平局') oddsVal = parseFloat(odds.draw);
+                else if (prediction === '客队胜') oddsVal = parseFloat(odds.lose);
+                if (oddsVal > 0) {
+                    const correct = (prediction === actualSPF);
+                    profit = correct ? 100 * (oddsVal - 1) : -100;
+                }
+            } else {
+                profit = calculateBetProfit(method, prediction, actualScore);
+            }
             betRecords.push({
                 date: date,
                 match: `${match.home} 对 ${match.away}`,
@@ -454,7 +574,7 @@ function updateStatistics(finishedMatches) {
                 prediction: prediction,
                 actual: actualScore,
                 correct: profit > 0,
-                odds: odds,
+                odds: parseFloat(odds.win) || 2.0,
                 profit: profit
             });
         });
@@ -479,16 +599,10 @@ function updateStatistics(finishedMatches) {
     };
 }
 
-// ---------- 定时器启动 ----------
+// ---------- 定时器 ----------
 function startTimers() {
-    setInterval(async () => {
-        await runFinishedSimulation();
-    }, 300000);
-
-    setInterval(async () => {
-        await runUpcomingSimulation();
-    }, 30000);
-
+    setInterval(async () => { await runFinishedSimulation(); }, 300000);
+    setInterval(async () => { await runUpcomingSimulation(); }, 30000);
     console.log('⏰ 定时器已启动: 已完赛(5分钟), 未开赛(30秒)');
 }
 
@@ -501,13 +615,15 @@ app.get('/api/state', (req, res) => {
     const finishedWithPred = finished.map(match => {
         const matchId = `${match.home}_${match.away}_${match.date}`;
         const cached = optimalCache.get(matchId);
+        const odds = cached ? cached.odds : null;
         return {
             ...match,
             pred: cached ? cached.pred : null,
             attempt: cached ? cached.attempt : null,
             totalAttempts: totalAttempts,
             confidence: cached ? cached.confidence : null,
-            weight: cached ? cached.weight : 1.0
+            weight: cached ? cached.weight : 1.0,
+            odds: odds
         };
     });
 
@@ -519,7 +635,8 @@ app.get('/api/state', (req, res) => {
             upcomingWithPred.push({
                 ...match,
                 latest: cached.latest ? { pred: cached.latest.pred, confidence: cached.latest.confidence } : null,
-                best: cached.best ? { pred: cached.best.pred, confidence: cached.best.confidence } : null
+                best: cached.best ? { pred: cached.best.pred, confidence: cached.best.confidence } : null,
+                odds: cached.odds || null
             });
         }
     });
