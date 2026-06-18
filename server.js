@@ -100,7 +100,7 @@ function getOddsForMethod(method, prediction) {
     return 1.0;
 }
 
-// ---------- 从 API-Football 获取真实赔率（需环境变量 FOOTBALL_API_KEY） ----------
+// ---------- 从 API-Football 获取真实赔率 ----------
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) {
@@ -232,7 +232,7 @@ async function getOdds(home, away, isFinished = false) {
     const cached = oddsCache.get(key);
     const now = Date.now();
 
-    const ttl = isFinished ? 86400000 : 10800000; // 24h / 3h
+    const ttl = isFinished ? 86400000 : 10800000;
 
     if (cached && (now - cached.timestamp) < ttl) {
         return cached.odds;
@@ -245,7 +245,6 @@ async function getOdds(home, away, isFinished = false) {
         return realOdds;
     }
 
-    // 备选：ELO 模拟
     const eloH = getElo(home);
     const eloA = getElo(away);
     const diff = eloH - eloA;
@@ -422,7 +421,7 @@ async function runFinishedSimulation() {
                     weight: weight,
                     odds: odds
                 });
-                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''} ${odds.from_real ? '[真实赔率]' : '[模拟赔率]'}`);
+                console.log(`✅ [已完赛] 更新: ${home} vs ${away} (第 ${bestAttempt} 次)${isUpsetFlag ? ' [爆冷, 权重0.5]' : ''}`);
             }
         }
 
@@ -483,7 +482,7 @@ async function runUpcomingSimulation() {
     }
 }
 
-// ---------- 计算盈亏（使用传入的赔率） ----------
+// ---------- 计算盈亏 ----------
 function calculateBetProfitWithOdds(method, prediction, actualScore, oddsValue) {
     if (!oddsValue || oddsValue <= 0) return 0;
     let correct = false;
@@ -515,7 +514,7 @@ function calculateBetProfitWithOdds(method, prediction, actualScore, oddsValue) 
     return correct ? stake * (oddsValue - 1) : -stake;
 }
 
-// ---------- 更新统计（修复赔率取值） ----------
+// ---------- 更新统计 ----------
 function updateStatistics(finishedMatches) {
     const methods = ['胜平负', '让球胜平负', '总进球数', '半全场', '正确比分'];
     const stats = {};
@@ -572,7 +571,7 @@ function updateStatistics(finishedMatches) {
     global.rates = rates;
     global.bestMethod = bestMethod;
 
-    // ---------- 投注明细 ----------
+    // ---------- 投注明细（修复：总进球数使用预测值，比分和总进球逻辑一致） ----------
     const betRecords = [];
     finishedMatches.forEach(match => {
         const actualScore = `${match.homeScore}:${match.awayScore}`;
@@ -586,12 +585,17 @@ function updateStatistics(finishedMatches) {
 
         methods.forEach(method => {
             let prediction = '';
+            let displayPrediction = '';
             switch(method) {
-                case '胜平负': prediction = pred.win_draw_lose.prediction; break;
-                case '让球胜平负': prediction = pred.handicap.prediction; break;
-                case '总进球数': prediction = pred.total_goals.prediction; break;
-                case '半全场': prediction = pred.half_full.prediction; break;
-                case '正确比分': prediction = pred.correct_score.prediction; break;
+                case '胜平负': prediction = pred.win_draw_lose.prediction; displayPrediction = prediction; break;
+                case '让球胜平负': prediction = pred.handicap.prediction; displayPrediction = prediction; break;
+                case '总进球数':
+                    prediction = pred.total_goals.prediction;
+                    // 显示为 "X球" 格式
+                    displayPrediction = prediction + '球';
+                    break;
+                case '半全场': prediction = pred.half_full.prediction; displayPrediction = prediction; break;
+                case '正确比分': prediction = pred.correct_score.prediction; displayPrediction = prediction; break;
             }
 
             // 根据玩法和预测结果获取正确的赔率
@@ -607,7 +611,9 @@ function updateStatistics(finishedMatches) {
                 else if (prediction === '客队赢盘') oddsValue = parseFloat(odds.a_odds);
                 if (!oddsValue || oddsValue <= 0) oddsValue = 1.9;
             } else if (method === '总进球数') {
+                // 总进球数：赔率使用 total_odds，预测值用于显示和正确判断
                 oddsValue = parseFloat(odds.total_odds) || 2.0;
+                // 但预测值已在上面设置，无需覆盖
             } else if (method === '半全场') {
                 oddsValue = 3.0;
             } else if (method === '正确比分') {
@@ -620,7 +626,7 @@ function updateStatistics(finishedMatches) {
                 date: date,
                 match: `${match.home} 对 ${match.away}`,
                 method: method,
-                prediction: prediction,
+                prediction: displayPrediction,  // 使用格式化后的显示
                 actual: actualScore,
                 correct: profit > 0,
                 odds: oddsValue,
