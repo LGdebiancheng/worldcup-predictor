@@ -13,6 +13,7 @@ let totalAttempts = 0;
 const optimalCache = new Map();
 const upcomingCache = new Map();
 const oddsCache = new Map();
+const theOddsApiCache = new Map(); // 🟢【新增】：The Odds API 专用缓存
 const formCache = new Map(); 
 let bestMethod = '胜平负';
 let methodStats = {};
@@ -22,7 +23,6 @@ let lastMatchData = {};
 let previousOddsRecord = {}; 
 
 let externalPredictions = [];
-
 let matchDiary = [];
 
 let historicalMethodSuccess = {
@@ -33,6 +33,7 @@ let historicalMethodSuccess = {
     '正确比分': { hits: 0, total: 0, profit: 0, totalStake: 0 }
 };
 
+// ---------- 数据映射 ----------
 const nameMap = { 'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰', 'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰', 'Italy': '意大利', 'Belgium': '比利时', 'Mexico': '墨西哥', 'Uruguay': '乌拉圭', 'Croatia': '克罗地亚', 'Denmark': '丹麦', 'Switzerland': '瑞士', 'USA': '美国', 'Senegal': '塞内加尔', 'Japan': '日本', 'South Korea': '韩国', 'Australia': '澳大利亚', 'Ecuador': '厄瓜多尔', 'Ghana': '加纳', 'Morocco': '摩洛哥', 'Nigeria': '尼日利亚', 'Serbia': '塞尔维亚', 'Poland': '波兰', 'Ukraine': '乌克兰', 'Austria': '奥地利', 'Wales': '威尔士', 'Scotland': '苏格兰', 'Czech Republic': '捷克', 'South Africa': '南非', 'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马', 'Saudi Arabia': '沙特', 'Iran': '伊朗', 'Qatar': '卡塔尔', 'Cameroon': '喀麦隆', 'Sweden': '瑞典' };
 const teamNameMapForOdds = { '巴西': 'Brazil', '阿根廷': 'Argentina', '法国': 'France', '英格兰': 'England', '德国': 'Germany', '西班牙': 'Spain', '葡萄牙': 'Portugal', '荷兰': 'Netherlands', '意大利': 'Italy', '比利时': 'Belgium', '墨西哥': 'Mexico', '乌拉圭': 'Uruguay', '克罗地亚': 'Croatia', '丹麦': 'Denmark', '瑞士': 'Switzerland', '美国': 'USA', '塞内加尔': 'Senegal', '日本': 'Japan', '韩国': 'South Korea', '澳大利亚': 'Australia', '厄瓜多尔': 'Ecuador', '加纳': 'Ghana', '摩洛哥': 'Morocco', '尼日利亚': 'Nigeria', '塞尔维亚': 'Serbia', '波兰': 'Poland', '乌克兰': 'Ukraine', '奥地利': 'Austria', '威尔士': 'Wales', '苏格兰': 'Scotland', '捷克': 'Czech Republic', '南非': 'South Africa', '加拿大': 'Canada', '新西兰': 'New Zealand', '哥斯达黎加': 'Costa Rica', '巴拿马': 'Panama', '沙特': 'Saudi Arabia', '伊朗': 'Iran', '卡塔尔': 'Qatar', '喀麦隆': 'Cameroon', '瑞典': 'Sweden' };
 const eloMap = { '巴西': 2100, '阿根廷': 2080, '法国': 2050, '英格兰': 2030, '德国': 2000, '西班牙': 1980, '葡萄牙': 1960, '荷兰': 1940, '意大利': 1920, '比利时': 1900, '墨西哥': 1880, '乌拉圭': 1860, '克罗地亚': 1840, '丹麦': 1820, '瑞士': 1800, '美国': 1780, '塞内加尔': 1760, '日本': 1740, '韩国': 1720, '澳大利亚': 1700, '厄瓜多尔': 1680, '加纳': 1660, '摩洛哥': 1640, '尼日利亚': 1620, '塞尔维亚': 1600, '波兰': 1580, '乌克兰': 1560, '奥地利': 1540, '威尔士': 1520, '苏格兰': 1500, '捷克': 1480, '南非': 1460, '加拿大': 1440, '新西兰': 1420, '哥斯达黎加': 1400, '巴拿马': 1380, '沙特': 1360, '伊朗': 1340, '卡塔尔': 1320, '喀麦隆': 1300, '瑞典': 1280 };
@@ -130,7 +131,11 @@ async function calculatePoissonProbabilities(home, away) {
     };
 }
 
-async function fetchRealOdds(home, away) {
+// ==========================================
+// 🟢【核心重构】：双API保底赔率获取
+// ==========================================
+// 1. 原生 API-Football 数据源
+async function fetchRealOddsFromAPIFootball(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) return null;
     const homeEn = teamNameMapForOdds[home] || home;
@@ -193,12 +198,106 @@ async function fetchRealOdds(home, away) {
     } catch (error) { return null; }
 }
 
+// 2. 🟢【新增】：The Odds API 备用数据源
+async function fetchRealOddsFromTheOddsAPI(home, away) {
+    const API_KEY = process.env.THE_ODDS_API_KEY;
+    if (!API_KEY) return null;
+    const homeEn = teamNameMapForOdds[home] || home;
+    const awayEn = teamNameMapForOdds[away] || away;
+    
+    const cacheKey = `${homeEn}_${awayEn}`;
+    if (theOddsApiCache.has(cacheKey)) return theOddsApiCache.get(cacheKey);
+
+    try {
+        // 请求 The Odds API
+        const url = `https://api.the-odds-api.com/v4/sports/soccer_worldcup/odds?apiKey=${API_KEY}&regions=eu&markets=h2h,spreads,totals,correct_score,half_full,halftime_winner&oddsFormat=decimal`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const data = await response.json();
+        
+        let matchData = null;
+        for (const item of data) {
+            // 这里做精确匹配
+            if (item.home_team === homeEn && item.away_team === awayEn) {
+                matchData = item; break;
+            }
+        }
+        if (!matchData) return null;
+
+        let win = 2.0, draw = 3.0, lose = 2.5;
+        let h_odds = 1.9, d_odds = 3.2, a_odds = 2.0, total_odds = 1.9;
+        let hf_odds = 3.0, cs_odds = 6.0;
+        let halfFullMap = {}, correctScoreMap = {};
+        
+        const bookmaker = matchData.bookmakers && matchData.bookmakers.length > 0 ? matchData.bookmakers[0] : null;
+        if (bookmaker) {
+            for (const market of bookmaker.markets) {
+                if (market.key === 'h2h') {
+                    for (const outcome of market.outcomes) {
+                        if (outcome.name === homeEn) win = outcome.price;
+                        else if (outcome.name === 'Draw') draw = outcome.price;
+                        else if (outcome.name === awayEn) lose = outcome.price;
+                    }
+                } else if (market.key === 'spreads') {
+                    for (const outcome of market.outcomes) {
+                        if (outcome.name === homeEn) h_odds = outcome.price;
+                        else if (outcome.name === awayEn) a_odds = outcome.price;
+                        else d_odds = outcome.price;
+                    }
+                } else if (market.key === 'totals') {
+                    if (market.outcomes.length > 0) total_odds = market.outcomes[0].price;
+                } else if (market.key === 'half_full') {
+                    for (const outcome of market.outcomes) {
+                        halfFullMap[outcome.name] = outcome.price;
+                        if (outcome.name === 'Home/Home') hf_odds = outcome.price;
+                    }
+                } else if (market.key === 'correct_score') {
+                    for (const outcome of market.outcomes) {
+                        correctScoreMap[outcome.name] = outcome.price;
+                        if (outcome.name === '2:1') cs_odds = outcome.price;
+                    }
+                }
+            }
+        }
+
+        const odds = { 
+            win: win.toFixed(2), draw: draw.toFixed(2), lose: lose.toFixed(2), 
+            h_odds: h_odds.toFixed(2), d_odds: d_odds.toFixed(2), a_odds: a_odds.toFixed(2), 
+            total_odds: total_odds.toFixed(2), hf_odds: hf_odds.toFixed(2), cs_odds: cs_odds.toFixed(2), 
+            halfFullMap, correctScoreMap, totalGoalsMap: {}, 
+            handicap: '0', from_real: true 
+        };
+        theOddsApiCache.set(cacheKey, odds);
+        return odds;
+    } catch (error) {
+        console.warn(`⚠️ The Odds API 抓取失败: ${error.message}`);
+        return null;
+    }
+}
+
+// 3. 统一调用入口
+async function fetchRealOdds(home, away) {
+    // 优先尝试 API-Football
+    const apiFootballOdds = await fetchRealOddsFromAPIFootball(home, away);
+    if (apiFootballOdds) return apiFootballOdds;
+
+    // 如果失败，立刻切换备用 The Odds API
+    const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
+    if (theOddsAPIOdds) return theOddsAPIOdds;
+
+    return null;
+}
+
+// ==========================================
+// 获取最终赔率(含内存缓存)
+// ==========================================
 async function getOdds(home, away, isFinished = false) {
     const key = `${home}_${away}`;
     const cached = oddsCache.get(key);
     const now = Date.now();
     const ttl = isFinished ? 86400000 : 10800000; 
     if (cached && (now - cached.timestamp) < ttl) return cached.odds;
+
     const realOdds = await fetchRealOdds(home, away);
     if (realOdds) {
         let flash_warning = false;
@@ -212,6 +311,7 @@ async function getOdds(home, away, isFinished = false) {
         oddsCache.set(key, { odds: realOdds, timestamp: now });
         return realOdds;
     }
+
     const eloH = getElo(home); const eloA = getElo(away);
     const diff = eloH - eloA;
     const pWin = 1 / (1 + Math.exp(-diff/200));
@@ -228,6 +328,7 @@ async function getOdds(home, away, isFinished = false) {
     return odds;
 }
 
+// ---------- DeepSeek 调用 ----------
 async function callDeepSeek(home, away, context, externalSignal, retries = 2) {
     const API_KEY = process.env.DEEPSEEK_API_KEY;
     if (!API_KEY) throw new Error('未设置 DEEPSEEK_API_KEY 环境变量');
@@ -609,7 +710,6 @@ app.get('/api/state', (req, res) => {
     res.json(state);
 });
 
-// 🟢【修复】：将5大玩法全部返回给前端
 app.get('/api/review', (req, res) => {
     const logs = [];
     const keys = Array.from(optimalCache.keys());
@@ -620,7 +720,6 @@ app.get('/api/review', (req, res) => {
             const [h, a] = data.actualScore.split(':').map(Number);
             const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
             const totalActual = h + a;
-            
             const result = {
                 match: `${data.home || '未知'} vs ${data.away || '未知'}`,
                 actualScore: data.actualScore,
