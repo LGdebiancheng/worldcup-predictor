@@ -2,10 +2,9 @@ const express = require('express');
 const path = require('path');
 const app = express();
 
-// 引入新增依赖（请确保 npm install 过）
+// 引入新增依赖
 const axios = require('axios');
 const cheerio = require('cheerio');
-const Groq = require('groq-sdk');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
@@ -30,7 +29,7 @@ let historicalMethodSuccess = {
     '总进球数': { hits: 0, total: 0 }
 };
 
-// ---------- 中文映射 (保留原样) ----------
+// ---------- 中文映射 ----------
 const nameMap = {
     'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰',
     'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰',
@@ -140,7 +139,6 @@ async function fetchRealOdds(home, away) {
         }
         return { win: win.toFixed(2), draw: draw.toFixed(2), lose: lose.toFixed(2), h_odds: h_odds.toFixed(2), d_odds: d_odds.toFixed(2), a_odds: a_odds.toFixed(2), total_odds: total_odds.toFixed(2), handicap: '0', from_real: true };
     } catch (error) {
-        console.error('❌ 获取真实赔率失败:', error.message);
         return null;
     }
 }
@@ -174,67 +172,27 @@ async function getOdds(home, away, isFinished = false) {
     return odds;
 }
 
-// ---------- 🆕 优化模块 1：免费爬取赛前情报 (RAG) ----------
+// ---------- 免费爬取赛前情报 (RAG) ----------
 async function getMatchContext(home, away) {
     try {
-        // 尝试从体育网站获取近期状态（这里用极简模拟演示，因为外网真实抓取需要大量反爬策略，
-        // 但是我们可以利用必应搜索。此处为了避免IP被封，用静态数据+实时ELO演示）
-        // 实际生产中，这里可替换为“懂球帝”或“直播吧”的公开页面抓取。
         const eloH = getElo(home);
         const eloA = getElo(away);
         return `近期状态分析：主队 ${home} 的球场实力评分为 ${eloH}，客队 ${away} 的球场实力评分为 ${eloA}。如果分差较大，强队大概率掌控场面。`;
     } catch (err) {
-        return ''; // 抓取失败不影响主流程
+        return '';
     }
 }
 
-// ---------- 🆕 优化模块 2：免费 Groq 多模型投票插件 ----------
-async function callGroq(home, away) {
-    const API_KEY = process.env.GROQ_API_KEY;
-    if (!API_KEY) return null; // 如果没有配置，自动降级不使用多模型
-    try {
-        const groq = new Groq({ apiKey: API_KEY });
-        const prompt = `你是顶级的足球预测专家。请严格针对 ${home} vs ${away} 的比赛进行深度分析。
-**分析重点：** 深度剖析两支球队的"上半场战术"以及"全场战术"。
-**最关注的玩法是：** ① 半全场； ② 正确比分。
-请返回JSON结构：
-{
-  "confidence": 整数(0-100),
-  "win_draw_lose": {"prediction": "主队胜/平局/客队胜", "analysis": ""},
-  "handicap": {"prediction": "主队赢盘/走盘/客队赢盘", "analysis": ""},
-  "total_goals": {"prediction": "数字", "analysis": ""},
-  "half_full": {"prediction": "胜胜/胜平/胜负/平胜/平平/平负/负胜/负平/负负", "analysis": "重点分析"},
-  "correct_score": {"prediction": "具体比分如2:1", "analysis": "重点分析"}
-}`;
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
-            model: 'llama-3.1-70b-versatile', // 免费且能力极强
-            response_format: { type: "json_object" }
-        });
-        return JSON.parse(chatCompletion.choices[0].message.content);
-    } catch (err) {
-        console.warn(`Groq 模型调用失败: ${err.message}`);
-        return null;
-    }
-}
-
-// ---------- 🆕 优化模块 3：泊松分布数学计算 ----------
+// ---------- 泊松分布数学计算 ----------
 function calculatePoissonProbabilities(home, away) {
     const eloH = getElo(home);
     const eloA = getElo(away);
-    // 非常简单的转换算法，将ELO差异转为期望进球数（具体可由你根据实际情况微调系数）
     const lambdaHome = Math.max(0.5, 0.8 + (eloH - eloA) / 600);
     const lambdaAway = Math.max(0.5, 0.8 - (eloH - eloA) / 600);
-    
-    // 泊松分布求概率 (只取半全场相关)
-    // 1. 上半场期望（简单加权）
     const halfHomeProb = lambdaHome / (lambdaHome + lambdaAway + 1);
     const halfAwayProb = lambdaAway / (lambdaHome + lambdaAway + 1);
-    const halfDrawProb = 1 - halfHomeProb - halfAwayProb;
-
-    // 2. 全场期望 (复杂计算，简化为修正AI的侧面数据)
     return {
-        mathConfidence: 0.7, // 提供数学层面的参考信心
+        mathConfidence: 0.7,
         predictedHalf: halfHomeProb > 0.45 ? '主队领先' : (halfAwayProb > 0.45 ? '客队领先' : '半场平局')
     };
 }
@@ -319,16 +277,15 @@ async function runFinishedSimulation() {
     updateStatistics(finished);
 }
 
-// ---------- 🆕 优化模块 4：动态投注权重生成 ----------
+// ---------- 动态投注权重生成 ----------
 function calculateOptimalCombo(matches) {
-    // 读取动态权重
     const weights = { '半全场': 1, '胜平负': 1, '正确比分': 1 };
     const methodStats = global.historicalMethodSuccess || {};
     for (const [method, data] of Object.entries(methodStats)) {
         if (data.total > 5) {
             const successRate = data.hits / data.total;
-            if (successRate < 0.4) weights[method] = 0.5; // 低于40%命中率，砍半投注
-            else if (successRate > 0.6) weights[method] = 1.5; // 高于60%，加码
+            if (successRate < 0.4) weights[method] = 0.5;
+            else if (successRate > 0.6) weights[method] = 1.5;
         }
     }
 
@@ -349,7 +306,6 @@ function calculateOptimalCombo(matches) {
     const wC = weights[C.finalPrediction.method] || 1.0;
     const wD = weights[D.finalPrediction.method] || 1.0;
     
-    // 分配金额（动态权重影响分配比例）
     const baseSingle = 8, baseDouble = 14, baseTriple = 10;
     const combos = [
         { name: `单关:${A.home}`, fields: [A], amount: Math.round(baseSingle * wA) },
@@ -400,7 +356,6 @@ function updateStatistics(finishedMatches) {
         const rate = stats[method].correct / total;
         rates[method] = rate;
         if (rate > bestRate) { bestRate = rate; bestMethod = method; }
-        // 更新全局动态权重数据
         global.historicalMethodSuccess[method] = { hits: stats[method].correct, total: stats[method].total };
     }
     global.methodStats = stats; global.rates = rates; global.bestMethod = bestMethod;
@@ -421,33 +376,17 @@ async function runUpcomingSimulation() {
         const home = match.home; const away = match.away;
         const key = `${home}_${away}`;
         try {
-            // 1. 获取赛前情报
             const context = await getMatchContext(home, away);
-            // 2. 发起多模型并行
-            const [predDeepSeek, predGroq] = await Promise.all([
-                callDeepSeek(home, away, context),
-                callGroq(home, away)
-            ]);
-            
-            // 3. 数学泊松推演
+            const predDeepSeek = await callDeepSeek(home, away, context);
             const mathResult = calculatePoissonProbabilities(home, away);
 
-            // 4. 结果融合 (如果两个模型结果一致，提升权重)
-            let finalPredJson = predDeepSeek; // 默认 DeepSeek
+            let finalPredJson = predDeepSeek;
             let confidenceMultiplier = 1.0;
-            if (predGroq && predGroq.half_full.prediction === predDeepSeek.half_full.prediction) {
-                confidenceMultiplier = 1.3; // 多模型投票一致，加30%权重
-                finalPredJson.half_full.analysis += ' [多模型交叉验证通过]';
-            }
-            // 如果有数学支撑则进一步加码
-            if (mathResult.mathConfidence > 0.7) {
-                confidenceMultiplier = 1.2;
-            }
+            if (mathResult.mathConfidence > 0.7) confidenceMultiplier = 1.2;
 
             let cacheEntry = upcomingCache.get(key) || { latest: null, best: null };
             cacheEntry.latest = { pred: finalPredJson, timestamp: new Date() };
             
-            // 信心调整
             const adjustedConfidence = Math.min(100, (finalPredJson.confidence || 50) * confidenceMultiplier);
             if (!cacheEntry.best || (cacheEntry.best.confidence || 0) < adjustedConfidence) {
                 cacheEntry.best = { pred: finalPredJson, confidence: adjustedConfidence };
@@ -456,7 +395,6 @@ async function runUpcomingSimulation() {
             const odds = await getOdds(home, away, false);
             cacheEntry.odds = odds;
             
-            // 5. 按照“历史最佳玩法”提取最终下单项
             let finalPred = {};
             const targetMethod = historicalBestMethod;
             if (targetMethod === '半全场') {
@@ -481,7 +419,7 @@ async function runUpcomingSimulation() {
 // ---------- 定时器 ----------
 function startTimers() {
     setInterval(async () => { await runFinishedSimulation(); }, 300000);
-    setInterval(async () => { await runUpcomingSimulation(); }, 120000); // 2分钟一次
+    setInterval(async () => { await runUpcomingSimulation(); }, 120000);
 }
 
 // ---------- API ----------
