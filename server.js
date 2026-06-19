@@ -19,7 +19,7 @@ let methodStats = {};
 let rates = {};
 let betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] };
 let lastMatchData = {};
-let previousOddsRecord = {}; // 🟢 监测赔率异动
+let previousOddsRecord = {}; 
 
 // 历史盈利率(ROI)
 let historicalMethodSuccess = {
@@ -40,7 +40,7 @@ function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 const fallbackData = { finished: [], upcoming: [] };
 
 // ==========================================
-// 优化 1 & 6：赛前情报 + 历史上半场 + 世界杯背景 + 模拟天气
+// 优化 1 & 6：赛前情报 + 历史上半场 + 世界杯背景
 // ==========================================
 async function getMatchNews(home, away) {
     try {
@@ -295,83 +295,113 @@ async function runFinishedSimulation() {
         }
         if (bestPred) {
             const odds = await getOdds(home, away, true);
-            optimalCache.set(matchId, { pred: bestPred, score: bestScore, odds: odds, actualScore: actualScore });
+            const isUpsetFlag = isUpsetWithOdds(home, away, actualScore, odds);
+            const weight = isUpsetFlag ? 1.5 : 1.0; // 🟢【改成了1.5】
+            optimalCache.set(matchId, { pred: bestPred, score: bestScore, odds: odds, weight: weight, actualScore: actualScore });
         }
     }
     updateStatistics(finished);
 }
 
-// ==========================================
-// 优化 4：凯利公式动态分配资金 + 增加极度防御机制
-// ==========================================
-function calculateOptimalCombo(matches) {
-    const A = matches[0], B = matches[1], C = matches[2], D = matches[3];
+function isUpsetWithOdds(home, away, actualScore, odds) {
+    const totalProb = 1/parseFloat(odds.win) + 1/parseFloat(odds.draw) + 1/parseFloat(odds.lose);
+    const probHome = (1/parseFloat(odds.win)) / totalProb;
+    const probDraw = (1/parseFloat(odds.draw)) / totalProb;
+    const probAway = (1/parseFloat(odds.lose)) / totalProb;
+    const [h, a] = actualScore.split(':').map(Number);
+    let actualProb = 0;
+    if (h > a) actualProb = probHome;
+    else if (h < a) actualProb = probAway;
+    else actualProb = probDraw;
+    return actualProb < 0.25;
+}
 
+// ==========================================
+// 优化 4：凯利公式逻辑，分离出独立组合计算
+// ==========================================
+function calculateKellyForMatches(matches, mode, budget = 100) {
     const getConf = (key) => {
         const cached = upcomingCache.get(key);
-        // 防御性编程：如果缓存或者最佳结果为空，返回 0.5 保底
         return cached && cached.best ? (cached.best.confidence / 100) : 0.5; 
     };
 
-    const getOdd = (match) => {
+    const getOddAndPred = (match, overrideMethod) => {
+        const method = overrideMethod || match.finalPrediction.method;
         const odds = match.odds;
-        if (match.finalPrediction.method === '半全场') return parseFloat(odds.hf_odds) || 3.0;
-        if (match.finalPrediction.method === '正确比分') return parseFloat(odds.cs_odds) || 6.0;
-        if (match.finalPrediction.method === '胜平负') {
-            if (match.finalPrediction.prediction.includes('主队胜')) return parseFloat(odds.win) || 2.0;
-            if (match.finalPrediction.prediction.includes('客队胜')) return parseFloat(odds.lose) || 2.5;
-            return parseFloat(odds.draw) || 3.0;
+        let prediction = match.finalPrediction.prediction;
+        // 如果强制模式不同，需要从 cache 里取 best pred
+        if (overrideMethod && overrideMethod !== match.finalPrediction.method) {
+            const cached = upcomingCache.get(match.matchKey);
+            if (cached && cached.best) {
+                if (overrideMethod === '半全场') prediction = cached.best.pred.half_full.prediction;
+                else if (overrideMethod === '正确比分') prediction = cached.best.pred.correct_score.prediction;
+                else if (overrideMethod === '胜平负') prediction = cached.best.pred.win_draw_lose.prediction;
+            }
         }
-        return 2.0;
+
+        if (method === '半全场') return { odd: parseFloat(odds.hf_odds) || 3.0, pred: prediction };
+        if (method === '正确比分') return { odd: parseFloat(odds.cs_odds) || 6.0, pred: prediction };
+        if (method === '胜平负') {
+            if (prediction.includes('主队胜')) return { odd: parseFloat(odds.win) || 2.0, pred: prediction };
+            if (prediction.includes('客队胜')) return { odd: parseFloat(odds.lose) || 2.5, pred: prediction };
+            return { odd: parseFloat(odds.draw) || 3.0, pred: prediction };
+        }
+        return { odd: 2.0, pred: prediction };
     };
 
-    const kellyStake = (p, odds) => {
-        if (odds <= 1 || p <= 0 || p >= 1) return 0;
-        const b = odds - 1;
+    const kellyStake = (p, odd) => {
+        if (odd <= 1 || p <= 0 || p >= 1) return 0;
+        const b = odd - 1;
         const f = (p * b - (1 - p)) / b;
         return Math.max(0, Math.min(0.25, f));
     };
 
-    const pA = getConf(A.matchKey);
-    const pB = getConf(B.matchKey);
-    const pC = getConf(C.matchKey);
-    const pD = getConf(D.matchKey);
-
-    const oddA = getOdd(A), oddB = getOdd(B), oddC = getOdd(C), oddD = getOdd(D);
-
-    const totalBudget = 100;
     let combos = [];
     let totalKellyAmount = 0;
 
     const addCombo = (name, fields, p, odd) => {
-        let amount = Math.round(totalBudget * kellyStake(p, odd));
+        let amount = Math.round(budget * kellyStake(p, odd));
         if (amount < 1) amount = 0;
         combos.push({ name, fields, amount, p, odd });
         totalKellyAmount += amount;
     };
 
-    addCombo(`单关:${A.home}`, [A], pA, oddA);
-    addCombo(`单关:${B.home}`, [B], pB, oddB);
-    addCombo(`单关:${C.home}`, [C], pC, oddC);
-    addCombo(`单关:${D.home}`, [D], pD, oddD);
-    
-    addCombo(`2串1:A+B`, [A,B], (pA+pB)/2, oddA*oddB);
-    addCombo(`2串1:A+C`, [A,C], (pA+pC)/2, oddA*oddC);
-    addCombo(`2串1:B+C`, [B,C], (pB+pC)/2, oddB*oddC);
-    addCombo(`2串1:B+D`, [B,D], (pB+pD)/2, oddB*oddD);
+    // 只有凑齐4场才演算组合
+    if (matches.length === 4) {
+        const [A, B, C, D] = matches;
+        const pA = getConf(A.matchKey);
+        const pB = getConf(B.matchKey);
+        const pC = getConf(C.matchKey);
+        const pD = getConf(D.matchKey);
 
-    addCombo(`3串1:A+B+C`, [A,B,C], (pA+pB+pC)/3, oddA*oddB*oddC);
-    addCombo(`4串1:A+B+C+D`, [A,B,C,D], (pA+pB+pC+pD)/4, oddA*oddB*oddC*oddD);
+        const oddA = getOddAndPred(A, mode).odd;
+        const oddB = getOddAndPred(B, mode).odd;
+        const oddC = getOddAndPred(C, mode).odd;
+        const oddD = getOddAndPred(D, mode).odd;
 
-    if (totalKellyAmount < 100 && totalKellyAmount > 0) {
-        const diff = 100 - totalKellyAmount;
-        const activeCombos = combos.filter(c => c.amount > 0);
-        if (activeCombos.length > 0) {
-            const totalP = activeCombos.reduce((sum, c) => sum + c.p, 0);
-            for (let c of combos) {
-                if (c.amount > 0 && totalP > 0) {
-                    const extra = Math.round(diff * (c.p / totalP));
-                    c.amount += extra;
+        addCombo(`单关:${A.home}`, [A], pA, oddA);
+        addCombo(`单关:${B.home}`, [B], pB, oddB);
+        addCombo(`单关:${C.home}`, [C], pC, oddC);
+        addCombo(`单关:${D.home}`, [D], pD, oddD);
+        
+        addCombo(`2串1:A+B`, [A,B], (pA+pB)/2, oddA*oddB);
+        addCombo(`2串1:A+C`, [A,C], (pA+pC)/2, oddA*oddC);
+        addCombo(`2串1:B+C`, [B,C], (pB+pC)/2, oddB*oddC);
+        addCombo(`2串1:B+D`, [B,D], (pB+pD)/2, oddB*oddD);
+
+        addCombo(`3串1:A+B+C`, [A,B,C], (pA+pB+pC)/3, oddA*oddB*oddC);
+        addCombo(`4串1:A+B+C+D`, [A,B,C,D], (pA+pB+pC+pD)/4, oddA*oddB*oddC*oddD);
+
+        if (totalKellyAmount < budget && totalKellyAmount > 0) {
+            const diff = budget - totalKellyAmount;
+            const activeCombos = combos.filter(c => c.amount > 0);
+            if (activeCombos.length > 0) {
+                const totalP = activeCombos.reduce((sum, c) => sum + c.p, 0);
+                for (let c of combos) {
+                    if (c.amount > 0 && totalP > 0) {
+                        const extra = Math.round(diff * (c.p / totalP));
+                        c.amount += extra;
+                    }
                 }
             }
         }
@@ -393,6 +423,7 @@ function updateStatistics(finishedMatches) {
         const cached = optimalCache.get(matchId);
         const pred = cached.pred;
         const odds = cached.odds;
+        const weight = cached.weight || 1.0; // 🟢 调用权重
         const [h, a] = actualScore.split(':').map(Number);
         const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
 
@@ -403,10 +434,10 @@ function updateStatistics(finishedMatches) {
         };
         
         for (const [method, data] of Object.entries(methodsToCheck)) {
-            stats[method].total += 1;
+            stats[method].total += weight; // 🟢 权重作用到统计里
             const stake = 1;
             if (data.correct) {
-                stats[method].correct += 1;
+                stats[method].correct += weight;
                 stats[method].profit += stake * (data.odds - 1);
             } else {
                 stats[method].profit -= stake;
@@ -465,12 +496,10 @@ async function runUpcomingSimulation() {
             const odds = await getOdds(home, away, false);
             cacheEntry.odds = odds;
             
-            // 🟢【绝对防御】修复导致崩溃的 null 指针报错
             let finalPred = {};
             const targetMethod = historicalBestMethod;
             const bestPred = cacheEntry.best ? cacheEntry.best.pred : null;
 
-            // 只要 bestPred 存在才去读取方法，否则直接返回兜底结果
             if (bestPred) {
                 if (targetMethod === '半全场') {
                     finalPred = { method: '半全场', prediction: bestPred.half_full.prediction, analysis: bestPred.half_full.analysis };
@@ -480,7 +509,6 @@ async function runUpcomingSimulation() {
                     finalPred = { method: targetMethod, prediction: bestPred.win_draw_lose.prediction };
                 }
             } else {
-                // 如果因为各种原因导致 AI 推演失败，就用最稳健的 50% 概率的平局兜底，绝不崩
                 finalPred = { method: '胜平负', prediction: '平局', analysis: 'AI调用失败，系统启用平局兜底' };
             }
 
@@ -489,21 +517,22 @@ async function runUpcomingSimulation() {
             matchPredictions.push({ home, away, matchKey: key, odds, finalPrediction: finalPred });
         } catch (err) { 
             console.warn(`[未开赛] 预测失败: ${err.message}`);
-            // 在这里也把失败的比赛塞进去，防止整个组合计算缺失
             const cached = upcomingCache.get(key) || { latest: null, best: null, odds: { hf_odds: '3.0', cs_odds: '6.0', win: '2.0', lose: '2.5', draw: '3.0' } };
             matchPredictions.push({ home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局' } });
         }
     }
 
+    // 🟢【新增】三个独立板块
     if (matchPredictions.length === 4) {
-        const betCombo = calculateOptimalCombo(matchPredictions);
-        global.upcomingBets = betCombo;
+        global.upcomingBetsOverall = calculateKellyForMatches(matchPredictions, null, 100);     // 板块1：综合策略
+        global.upcomingBetsHF = calculateKellyForMatches(matchPredictions, '半全场', 100);      // 板块2：半全场专项
+        global.upcomingBetsCS = calculateKellyForMatches(matchPredictions, '正确比分', 100);    // 板块3：正确比分专项
     }
 }
 
 function startTimers() {
     setInterval(async () => { await runFinishedSimulation(); }, 300000);
-    setInterval(async () => { await runUpcomingSimulation(); }, 180000); // 3分钟一次，降低API压力
+    setInterval(async () => { await runUpcomingSimulation(); }, 180000);
 }
 
 // ---------- API ----------
@@ -532,12 +561,10 @@ app.get('/api/state', (req, res) => {
         }
     });
 
-    let safeBets = [];
-    if (global.upcomingBets && global.upcomingBets.length > 0) {
-        safeBets = global.upcomingBets;
-    } else {
-        safeBets = [ { name: "等待推演中...", fields: [], amount: 0 } ];
-    }
+    const safeBet = (bets) => {
+        if (bets && bets.length > 0) return bets;
+        return [ { name: "等待推演中...", fields: [], amount: 0 } ];
+    };
 
     let safeBetSummary = {
         totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: []
@@ -556,7 +583,10 @@ app.get('/api/state', (req, res) => {
         bestMethod: global.bestMethod || '胜平负',
         stats: global.methodStats || {},
         rates: global.rates || {},
-        upcomingBets: safeBets,
+        // 🟢 三个板块投注数据
+        upcomingBetsOverall: safeBet(global.upcomingBetsOverall),
+        upcomingBetsHF: safeBet(global.upcomingBetsHF),
+        upcomingBetsCS: safeBet(global.upcomingBetsCS),
         betSummary: safeBetSummary
     };
     res.json(state);
