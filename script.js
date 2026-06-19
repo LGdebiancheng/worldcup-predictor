@@ -1,16 +1,17 @@
-// 【已经匹配到你 Railway 上的域名】
+// 已绑定你的正确云端域名
 const API_BASE_URL = 'https://worldcup-predictor-production-f064.up.railway.app';
 
 async function loadPredictions() {
     const container = document.getElementById('today-prediction');
     try {
-        // 发起真实请求
+        console.log(`正在尝试请求: ${API_BASE_URL}/predict`);
         const response = await fetch(`${API_BASE_URL}/predict`);
         if (!response.ok) throw new Error(`网络连接错误 (${response.status})`);
         const json = await response.json();
 
+        // 如果后端提示还在加载中，显示等待字样
         if (json.status === 'loading') {
-            container.innerHTML = `<div class="loading">⏳ 云端正在并发请求 5 个大模型，请稍候（约 10~20秒）...</div>`;
+            container.innerHTML = `<div class="loading">⏳ 云端正在并发请求 5 个大模型，预计需要 15~30秒，请勿刷新...</div>`;
             return;
         }
 
@@ -21,7 +22,6 @@ async function loadPredictions() {
                 let predictionsHtml = '';
                 for (const [model, result] of Object.entries(match.predictions)) {
                     let displayResult = result;
-                    // 自动处理部分平台报错（如429请求超限）
                     if (displayResult.includes('429 Too Many Requests')) {
                         displayResult = '<span class="fail-text">🚫 请求超限 (429)</span>';
                     } else if (displayResult.includes('Error:')) {
@@ -41,12 +41,16 @@ async function loadPredictions() {
             });
             container.innerHTML = htmlContent || '<div class="loading">暂无比赛数据</div>';
         } else {
-            container.innerHTML = '<div class="loading">后端数据异常，请检查控制台</div>';
+            container.innerHTML = '<div class="loading">后端数据异常，请在浏览器按 F12 查看控制台。</div>';
         }
     } catch (error) {
         console.error("前端请求失败:", error);
-        container.innerHTML = `<div class="error"><b>⚠️ 连接云端后端失败</b><br>请检查 Railway 控制台是否处于绿色的 <b>Active</b> 状态。</div>`;
+        // 报错时提示更具体的排查方法
+        container.innerHTML = `<div class="error"><b>⚠️ 连接云端后端失败</b><br>
+            请先尝试直接访问后端接口看是否有数据：<br>
+            <b style="background:#eee;padding:2px 6px;">${API_BASE_URL}/predict</b><br>
+            如果提示 500 错误，说明你在 Railway 的 <b>Variables</b> 里可能漏填了 5 个大模型的 API Key。
+        </div>`;
     }
 }
-// 页面一加载就执行
 window.onload = loadPredictions;
