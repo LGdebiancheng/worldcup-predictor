@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs'); // 🟢【新增】：引入文件系统用于持久化缓存
 const app = express();
 
 const axios = require('axios');
@@ -58,6 +59,55 @@ function getRandomUserAgent() {
     ];
     return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
+
+// ==========================================
+// 🟢【新增】：本地文件缓存机制（防止重启丢失历史数据）
+// ==========================================
+const CACHE_FILE = path.join(__dirname, 'prediction_cache.json');
+
+function loadCache() {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            const data = fs.readFileSync(CACHE_FILE, 'utf8');
+            const parsed = JSON.parse(data);
+            // 恢复 optimalCache
+            if (parsed.optimalCache) {
+                for (const [key, val] of Object.entries(parsed.optimalCache)) {
+                    optimalCache.set(key, val);
+                }
+            }
+            // 恢复 betSummary
+            if (parsed.betSummary) {
+                global.betSummary = parsed.betSummary;
+            }
+            // 恢复 historicalMethodSuccess
+            if (parsed.historicalMethodSuccess) {
+                global.historicalMethodSuccess = parsed.historicalMethodSuccess;
+            }
+            console.log(`✅ 本地缓存恢复成功！已加载 ${optimalCache.size} 场比赛的历史推演数据。`);
+        }
+    } catch (err) {
+        console.warn('⚠️ 读取本地缓存失败，将使用全新内存状态。');
+    }
+}
+
+function saveCache() {
+    try {
+        // 收集需要持久化的数据
+        const dataToSave = {
+            optimalCache: Object.fromEntries(optimalCache),
+            betSummary: global.betSummary,
+            historicalMethodSuccess: global.historicalMethodSuccess
+        };
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(dataToSave, null, 2));
+        console.log('💾 推演数据已成功保存到本地缓存文件。');
+    } catch (err) {
+        console.warn('⚠️ 写入本地缓存失败:', err.message);
+    }
+}
+
+// 启动时加载缓存
+loadCache();
 
 // ==========================================
 // 赛前情报与自动拦截
@@ -142,7 +192,7 @@ async function calculatePoissonProbabilities(home, away) {
 }
 
 // ==========================================
-// 🟢【核心修复】：双API精准互补 + 纯净ELO兜底
+// 双API精准互补 + 纯净ELO兜底
 // ==========================================
 async function fetchRealOddsFromAPIFootball(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -346,13 +396,12 @@ async function getOdds(home, away, isFinished = false) {
     if (pLose < 0.1) pLose = 0.1;
     const total = pWin + pDraw + pLose;
     
-    // 🟢【核心修复】：只有胜平负/让球可以使用 ELO 计算，半全场和比分必须用合理的默认值，防止出现 1.07 的假赔率
     const odds = {
         win: (1 / (pWin / total)).toFixed(2), draw: (1 / (pDraw / total)).toFixed(2), lose: (1 / (pLose / total)).toFixed(2),
         h_odds: (1 / (pWin / total) * 0.95).toFixed(2), d_odds: (1 / (pDraw / total) * 0.95).toFixed(2), a_odds: (1 / (pLose / total) * 0.95).toFixed(2),
-        total_odds: (2.0).toFixed(2), // 无总进球赔率时，取 2.0 作为平均值
-        hf_odds: '3.5', // 真实半全场赔率通常不会低于 3.0，这里取 3.5 作为合理的兜底
-        cs_odds: '8.0', // 真实比分赔率极高，用 8.0 兜底防止凯利公式误判
+        total_odds: (2.0).toFixed(2),
+        hf_odds: '3.5',
+        cs_odds: '8.0',
         halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {},
         handicap: '0', from_real: false, flash_warning: false
     };
@@ -448,6 +497,8 @@ async function runFinishedSimulation() {
         }
     }
     updateStatistics(finished);
+    // 🟢【新增】：推演完成后，立即保存到本地文件缓存
+    saveCache();
 }
 
 function isUpsetWithOdds(home, away, actualScore, odds) {
@@ -635,7 +686,6 @@ async function runUpcomingSimulation() {
     const upcomingLimit = 4;
     const upcomingSlice = upcoming.slice(0, upcomingLimit);
 
-    // 🟢【极致修复】：外部抓取改成非阻塞（完全后台运行），确保推演列表立刻出现！
     let externalData = null;
     try {
         fetchExternalPredictions().then(data => {
@@ -643,12 +693,14 @@ async function runUpcomingSimulation() {
         }).catch(() => {});
     } catch (e) {}
 
+    // 🟢【新增】：引入 10 秒推演超时，避免一直卡在“等待推演”
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 10000)); 
+    
     const matchPromises = upcomingSlice.map(async (match) => {
         const home = match.home; const away = match.away; const key = `${home}_${away}`;
         try {
             const { text: context, isCriticalInjury, injuryKey } = await getMatchNewsAndInjury(home, away);
             let externalSignal = null;
-            // 这里的 externalData 如果初始为空，下一轮 3 分钟推演会自带。
             if (global.externalPredictions && global.externalPredictions.predictions) {
                 const matchNorm = normalizeString(`${home}vs${away}`);
                 for (const ext of global.externalPredictions.predictions) {
@@ -658,7 +710,17 @@ async function runUpcomingSimulation() {
                     }
                 }
             }
-            const predDeepSeek = await callDeepSeek(home, away, context, externalSignal);
+            
+            // 竞速机制：如果超过总时间，则使用兜底
+            const raceResult = await Promise.race([
+                callDeepSeek(home, away, context, externalSignal),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('AI推演超时')), 8000))
+            ]).catch(err => {
+                console.warn(`AI推演超时，使用默认兜底: ${home} vs ${away}`);
+                return { confidence: 50, win_draw_lose: { prediction: '平局', analysis: '超时兜底' }, handicap: { prediction: '走盘' }, total_goals: { prediction: '2' }, half_full: { prediction: '平平' }, correct_score: { prediction: '1:1' } };
+            });
+
+            const predDeepSeek = raceResult;
             const mathResult = await calculatePoissonProbabilities(home, away);
             let finalPredJson = predDeepSeek;
             let confidenceMultiplier = 1.0;
@@ -694,7 +756,16 @@ async function runUpcomingSimulation() {
             return { home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局', autoWarnings: ['接口异常，系统启用平局兜底'] } };
         }
     });
-    const matchPredictions = await Promise.all(matchPromises);
+    
+    // 设置总的最大等待时间限制（10秒 + 1秒缓冲）
+    const matchPredictions = await Promise.race([
+        Promise.all(matchPromises),
+        new Promise((resolve) => setTimeout(() => {
+            console.warn('⚠️ 未开赛推演总时间超 11 秒，强制返回当前已完成的推演');
+            resolve([]);
+        }, 11000))
+    ]);
+
     if (matchPredictions.length === 4) {
         global.upcomingBetsOverall = calculateKellyForMatches(matchPredictions, null, 100);
         global.upcomingBetsWinDrawLose = calculateKellyForMatches(matchPredictions, '胜平负', 100);
