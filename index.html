@@ -3,151 +3,318 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeepSeek 世界杯智能推演</title>
+    <title>DeepSeek 世界杯 · AI 智能推演</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* 全局极简清爽风格 */
         body {
-            background-color: #f4f6f9;
-            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+            margin: 0;
             padding: 20px;
-            color: #333;
-            -webkit-font-smoothing: antialiased;
+            background-color: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #1e293b;
         }
-        .app-container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
         
-        /* 头部 */
-        .header { text-align: center; padding: 10px 0; }
-        .header h1 { font-size: 1.6rem; font-weight: 600; color: #1a1a1a; }
-        .header p { color: #888; font-size: 0.9rem; margin-top: 4px; }
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
 
-        /* 公共卡片样式 */
-        .card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04); padding: 18px 20px; border: 1px solid #eaeef2; }
-        .card-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; color: #1a1a1a; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
-        .card-title i { color: #2563eb; }
+        /* 头部标题区 */
+        .header {
+            text-align: center;
+            padding: 10px 0 5px 0;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 20px;
+            margin-bottom: 5px;
+        }
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin: 0;
+            color: #0f172a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+        .header h1 i {
+            color: #3b82f6;
+            font-size: 1.6rem;
+        }
+        .header p {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-top: 6px;
+        }
 
-        /* --- 模块1：已完赛盈亏复盘 --- */
-        .match-row { display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; padding: 12px 0; }
-        .match-row:last-child { border-bottom: none; }
-        .match-info { min-width: 85px; font-size: 0.75rem; color: #666; font-weight: 600; text-align: center; }
-        .bet-cells { flex: 1; display: flex; justify-content: space-around; text-align: center; }
-        .bet-cell { display: flex; flex-direction: column; align-items: center; flex: 1; border-right: 1px dashed #f0f0f0; padding: 0 4px; }
-        .bet-cell:last-child { border-right: none; }
-        .bc-pred { font-size: 0.8rem; font-weight: 500; color: #333; }
-        .bc-odds { font-size: 0.7rem; color: #999; margin: 2px 0; }
-        .bc-profit { font-size: 0.85rem; font-weight: 700; }
+        /* 卡片主体 */
+        .card {
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+            padding: 20px 24px;
+            border: 1px solid #e2e8f0;
+            transition: box-shadow 0.2s ease;
+        }
+        .card:hover {
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.06);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #0f172a;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .card-title i {
+            color: #3b82f6;
+        }
+
+        /* 模块1 已完赛盈亏列表 */
+        .match-row {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 14px 0;
+        }
+        .match-row:last-child {
+            border-bottom: none;
+        }
+        
+        .match-info {
+            min-width: 80px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #475569;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        .bet-cells {
+            flex: 1;
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+        }
+        
+        .bet-cell {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-right: 1px dashed #e2e8f0;
+            padding: 0 6px;
+        }
+        .bet-cell:last-child {
+            border-right: none;
+        }
+        
+        .bc-pred {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .bc-odds {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            margin: 2px 0;
+        }
+        .bc-profit {
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
         .bc-profit.positive { color: #16a34a; }
         .bc-profit.negative { color: #dc2626; }
-        .match-total { min-width: 60px; text-align: center; font-weight: 700; font-size: 0.95rem; }
+
+        .match-total {
+            min-width: 50px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            padding-left: 10px;
+        }
         .match-total.positive { color: #16a34a; }
         .match-total.negative { color: #dc2626; }
-        .disclaimer { font-size: 0.7rem; color: #999; text-align: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5f5f5; }
 
-        /* --- 模块2：未开赛预测 --- */
-        .upcoming-wrap { overflow-x: auto; }
-        .upcoming-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 650px; }
-        .upcoming-table th { text-align: center; padding: 8px 4px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #f0f0f0; }
-        .upcoming-table td { text-align: center; padding: 12px 4px; border-bottom: 1px solid #f5f5f5; }
-        .upcoming-table tr:last-child td { border-bottom: none; }
-        .team-col { font-weight: 500; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-        .vs-col { color: #999; font-size: 0.7rem; }
-        .type-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 600; }
+        .disclaimer {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-align: center;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        /* 模块2 即将开赛预测表格 */
+        .table-wrap { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th {
+            text-align: center;
+            padding: 12px 6px;
+            color: #64748b;
+            font-weight: 600;
+            border-bottom: 2px solid #e2e8f0;
+            background: #f8fafc;
+        }
+        td {
+            text-align: center;
+            padding: 12px 6px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: middle;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .match-team { font-weight: 500; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .match-vs { color: #94a3b8; font-size: 0.7rem; }
+        .badge-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            font-weight: 600;
+        }
         .badge-best { background: #fef3c7; color: #d97706; }
-        .badge-latest { background: #f3f4f6; color: #6b7280; }
-        .pred-val { font-weight: 500; color: #2563eb; }
+        .badge-latest { background: #e2e8f0; color: #475569; }
+        .pred-text { font-weight: 600; color: #2563eb; }
+        .conf-text { background: #f1f5f9; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; color: #475569; display: inline-block; }
 
-        /* 6个100元组合卡 */
-        .bet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 15px; }
-        .bet-card { background: #f8fafc; border-radius: 8px; padding: 10px 14px; border: 1px solid #e2e8f0; }
-        .bet-card-title { font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 8px; display: flex; justify-content: space-between; }
+        /* 6个 100元分配卡片 */
+        .bet-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .bet-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 14px 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .bet-card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
         .bet-list { display: flex; flex-direction: column; gap: 4px; }
-        .bet-item { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px dashed #e2e8f0; }
+        .bet-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            padding: 3px 0;
+            border-bottom: 1px dashed #e2e8f0;
+        }
         .bet-item:last-child { border-bottom: none; }
-        .bet-amount { font-weight: 600; color: #2563eb; }
+        .bet-amount { font-weight: 700; color: #2563eb; }
 
-        /* --- 模块3：历史推演对照表 (已改为单行展示) --- */
-        .review-wrap { overflow-x: auto; }
-        .review-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-        .review-table th { text-align: center; padding: 8px 4px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #f0f0f0; }
-        .review-table td { text-align: center; padding: 8px 4px; border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
-        .review-table tr:last-child td { border-bottom: none; }
-        
-        .rev-pred { font-weight: 500; color: #2563eb; }
-        .rev-status-wrap { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-        .status-item { font-weight: 500; display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
-        .status-hit { color: #16a34a; }
-        .status-miss { color: #dc2626; }
+        /* 模块3 历史推演复盘（重点：判定结果与预测合并在一列） */
+        .review-table th {
+            background: #f1f5f9;
+        }
+        .review-cell-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap; /* 强制在同一行显示 */
+        }
+        .review-pred {
+            font-weight: 600;
+            color: #2563eb;
+        }
+        .review-status {
+            font-size: 1.1rem; /* 统一 ✅ ❌ 的大小 */
+            line-height: 1;
+        }
+        .review-status.hit { color: #16a34a; }
+        .review-status.miss { color: #dc2626; }
 
-        .loading-tip { text-align: center; padding: 30px 0; color: #9ca3af; }
-        .loading-tip i { margin-right: 8px; animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        @media (max-width: 600px) {
-            .match-row { flex-direction: column; align-items: stretch; gap: 8px; }
-            .match-info { min-width: auto; text-align: center; }
-            .match-total { margin-top: 8px; }
-            .bet-cells { flex-wrap: wrap; }
-            .bet-cell { border-bottom: 1px dashed #f0f0f0; padding: 6px 0; border-right: none; }
-            .bet-cell:last-child { border-bottom: none; }
+        /* 加载占位 */
+        .loading-text {
+            text-align: center;
+            padding: 30px 0;
+            color: #94a3b8;
+        }
+        .loading-text i {
+            margin-right: 8px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
 
     <div class="app-container">
+        <!-- 头部 -->
         <div class="header">
-            <h1>⚽ 世界杯 · AI 智能推演</h1>
-            <p>基于 DeepSeek + 泊松分布 + 凯利公式自动博弈推演</p>
+            <h1><i class="fa-solid fa-robot"></i> DeepSeek · 世界杯智能推演</h1>
+            <p>AI 直觉 + 泊松分布 + 凯利公式，全自动博弈</p>
         </div>
 
-        <!-- ========================================= -->
-        <!-- 模块一：已完赛推演复盘 -->
-        <!-- ========================================= -->
-        <div class="card" id="container-finished">
-            <div class="card-title"><i class="fa-solid fa-chart-line"></i> 已完赛 · 推演盈亏复盘</div>
-            <div id="finished-list">
-                <div class="loading-tip"><i class="fa-solid fa-spinner"></i> 正在拉取历史推演数据...</div>
-            </div>
-            <div class="disclaimer">* 盈亏 = 100元 * (赔率 - 1) / -100元 (单注亏损)</div>
-        </div>
-
-        <!-- ========================================= -->
-        <!-- 模块二：即将开赛精准预测 -->
-        <!-- ========================================= -->
+        <!-- 已完赛复盘 -->
         <div class="card">
-            <div class="card-title"><i class="fa-regular fa-clock"></i> 即将开赛 · 赛果大预言</div>
-            <div class="upcoming-wrap">
-                <table class="upcoming-table">
+            <div class="card-title"><i class="fa-solid fa-chart-line"></i> 已完赛 · 投注盈亏复盘</div>
+            <div id="finished-list">
+                <div class="loading-text"><i class="fa-solid fa-spinner"></i> 数据加载中...</div>
+            </div>
+            <div class="disclaimer">* 盈亏 = (赔率 - 1) × 100元，未中则亏损100元。</div>
+        </div>
+
+        <!-- 即将开赛预测 -->
+        <div class="card">
+            <div class="card-title"><i class="fa-regular fa-clock"></i> 即将开赛 · 赛前大预言</div>
+            <div class="table-wrap">
+                <table>
                     <thead>
                         <tr>
-                            <th>开赛时间</th>
-                            <th>比赛双方</th>
-                            <th>预测状态</th>
+                            <th>时间</th>
+                            <th>对阵双方</th>
+                            <th>状态</th>
                             <th>胜平负</th>
                             <th>让球</th>
                             <th>总进球</th>
-                            <th>信心度</th>
+                            <th>信心</th>
                         </tr>
                     </thead>
                     <tbody id="upcoming-list">
-                        <tr><td colspan="7" class="loading-tip"><i class="fa-solid fa-spinner"></i> AI 正在跨越次元推演中...</td></tr>
+                        <tr><td colspan="7" class="loading-text"><i class="fa-solid fa-spinner"></i> AI 正在推演...</td></tr>
                     </tbody>
                 </table>
             </div>
-
-            <!-- 6大板块 100元分配卡 -->
+            <!-- 组合投注卡 -->
             <div class="bet-grid" id="bet-grids-container">
-                <!-- 由 JS 动态生成 -->
+                <div class="loading-text" style="grid-column:1/-1; padding:15px;"><i class="fa-solid fa-spinner"></i> 计算资金分配中...</div>
             </div>
         </div>
 
-        <!-- ========================================= -->
-        <!-- 模块三：历史推演对照表 (已修改为一行) -->
-        <!-- ========================================= -->
+        <!-- 历史推演报告 -->
         <div class="card">
-            <div class="card-title"><i class="fa-solid fa-book"></i> 历史推演 · 回溯报告</div>
-            <div class="review-wrap">
+            <div class="card-title"><i class="fa-solid fa-book-open"></i> 历史推演 · 回溯报告</div>
+            <div class="table-wrap">
                 <table class="review-table">
                     <thead>
                         <tr>
@@ -158,33 +325,31 @@
                             <th>总进球</th>
                             <th>半全场</th>
                             <th>比分</th>
-                            <th>最终判定</th>
                         </tr>
                     </thead>
                     <tbody id="review-list">
-                        <tr><td colspan="8" class="loading-tip"><i class="fa-solid fa-spinner"></i> 正在生成过往战绩复盘...</td></tr>
+                        <tr><td colspan="7" class="loading-text"><i class="fa-solid fa-spinner"></i> 生成推演历史...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
-
     </div>
 
     <script>
         const API_STATE = '/api/state';
         const API_REVIEW = '/api/review';
 
-        // ================= 1. 渲染已完赛盈亏 =================
+        // 1. 渲染已完赛 (红绿盈亏)
         function renderFinished(matches) {
             const container = document.getElementById('finished-list');
             if (!matches || matches.length === 0) {
-                container.innerHTML = `<div class="loading-tip">暂无已完赛推演记录</div>`;
+                container.innerHTML = `<div class="loading-text">暂无完赛记录</div>`;
                 return;
             }
             let html = '';
             for (const m of matches) {
-                const pred = m.pred || {};
-                const odds = m.odds || {};
+                if (!m.pred || !m.odds) continue;
+                const pred = m.pred, odds = m.odds;
                 const actual = `${m.homeScore}:${m.awayScore}`;
                 const homeWin = m.homeScore > m.awayScore;
                 const isDraw = m.homeScore === m.awayScore;
@@ -218,7 +383,7 @@
 
                 let totalProfit = 0;
                 let colHtml = cols.map(c => {
-                    if (c.pred === '-') { return `<div class="bet-cell"><div class="bc-pred">-</div><div class="bc-odds">-</div><div class="bc-profit">-</div></div>`; }
+                    if (c.pred === '-') return `<div class="bet-cell"><div class="bc-pred">-</div><div class="bc-odds">-</div><div class="bc-profit">-</div></div>`;
                     const profit = getProfit(c.name, c.pred, c.odd);
                     totalProfit += profit;
                     return `<div class="bet-cell">
@@ -228,25 +393,23 @@
                     </div>`;
                 }).join('');
 
-                const totalColor = totalProfit >= 0 ? 'positive' : 'negative';
-                const totalStr = totalProfit >= 0 ? '+' : '';
-
+                const totalCls = totalProfit >= 0 ? 'positive' : 'negative';
                 html += `
                     <div class="match-row">
-                        <div class="match-info">${m.home}<br>vs<br>${m.away}</div>
+                        <div class="match-info">${m.home}<br><span style="font-size:0.7rem;">vs</span><br>${m.away}</div>
                         <div class="bet-cells">${colHtml}</div>
-                        <div class="match-total ${totalColor}">${totalStr}${Math.round(totalProfit)}</div>
+                        <div class="match-total ${totalCls}">${totalProfit >= 0 ? '+' : ''}${Math.round(totalProfit)}</div>
                     </div>
                 `;
             }
             container.innerHTML = html;
         }
 
-        // ================= 2. 渲染即将开赛 =================
+        // 2. 渲染即将开赛
         function renderUpcoming(upcoming, bets) {
             const tbody = document.getElementById('upcoming-list');
             if (!upcoming || upcoming.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="loading-tip">等待赛前推演生成...</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="loading-text">等待赛前推演生成...</td></tr>`;
                 return;
             }
             let html = '';
@@ -255,16 +418,13 @@
                 const time = m.time || '--:--';
                 html += `
                     <tr>
-                        <td style="font-size:0.75rem; color:#666; white-space:nowrap;">${time}</td>
-                        <td><div class="team-col"><span>${m.home}</span><span class="vs-col">VS</span><span>${m.away}</span></div></td>
-                        <td class="type-col">
-                            <span class="badge badge-latest">最新</span>
-                            <span class="badge badge-best">最佳 ⭐</span>
-                        </td>
-                        <td class="pred-val">${best.win_draw_lose ? best.win_draw_lose.prediction : '-'}</td>
-                        <td class="pred-val">${best.handicap ? best.handicap.prediction : '-'}</td>
-                        <td class="pred-val">${best.total_goals ? best.total_goals.prediction + '球' : '-'}</td>
-                        <td><span style="background:#f3f4f6; padding:2px 8px; border-radius:12px; font-size:0.8rem;">${m.best ? (m.best.confidence || 0) : 0}%</span></td>
+                        <td style="font-size:0.75rem; color:#64748b;">${time}</td>
+                        <td><div class="match-team"><span>${m.home}</span><span class="match-vs">VS</span><span>${m.away}</span></div></td>
+                        <td><div class="badge-group"><span class="badge badge-latest">最新</span><span class="badge badge-best">最佳</span></div></td>
+                        <td class="pred-text">${best.win_draw_lose ? best.win_draw_lose.prediction : '-'}</td>
+                        <td class="pred-text">${best.handicap ? best.handicap.prediction : '-'}</td>
+                        <td class="pred-text">${best.total_goals ? best.total_goals.prediction + '球' : '-'}</td>
+                        <td><span class="conf-text">${m.best ? (m.best.confidence || 0) : 0}%</span></td>
                     </tr>
                 `;
             }
@@ -272,7 +432,7 @@
 
             const gridContainer = document.getElementById('bet-grids-container');
             if (!bets || Object.keys(bets).length === 0) {
-                gridContainer.innerHTML = `<div class="loading-tip" style="grid-column:1/-1;">等待资金分配演算...</div>`;
+                gridContainer.innerHTML = `<div class="loading-text" style="grid-column:1/-1;">等待资金分配...</div>`;
                 return;
             }
             const configs = [
@@ -291,59 +451,53 @@
                 `).join('');
                 gridHtml += `
                     <div class="bet-card">
-                        <div class="bet-card-title"><i class="${cfg.icon}"></i> ${cfg.name} <span style="font-weight:normal;color:#9ca3af;">(100元)</span></div>
-                        <div class="bet-list">${itemHtml || '<div style="color:#999;font-size:0.75rem;">等待生成...</div>'}</div>
+                        <div class="bet-card-title"><i class="${cfg.icon}"></i> ${cfg.name} <span style="font-weight:normal;color:#94a3b8;">(100元)</span></div>
+                        <div class="bet-list">${itemHtml || '<div style="color:#94a3b8;font-size:0.75rem;">等待推演</div>'}</div>
                     </div>
                 `;
             }
             gridContainer.innerHTML = gridHtml;
         }
 
-        // ================= 3. 渲染历史报告 (修复单行排版) =================
+        // 3. 渲染历史推演报告（将✅和❌内联到预测值旁边，并且一行解决）
         function renderReviews(reviews) {
             const tbody = document.getElementById('review-list');
             if (!reviews || reviews.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="loading-tip">暂无历史推演数据...</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="loading-text">暂无历史推演数据...</td></tr>`;
                 return;
             }
-
             let html = '';
             for (const rev of reviews) {
-                // 将判定结果全部合并到一行
-                const statuses = [
-                    { label: '胜', hit: rev.isHitWDL },
-                    { label: '让', hit: rev.isHitHandicap },
-                    { label: '进', hit: rev.isHitTG },
-                    { label: '半', hit: rev.isHitHF },
-                    { label: '比', hit: rev.isHitCS }
-                ];
-                let statusHtml = statuses.map(s => {
-                    const cls = s.hit ? 'status-hit' : 'status-miss';
-                    const icon = s.hit ? '✅' : '❌';
-                    return `<span class="status-item ${cls}">${icon} ${s.label}</span>`;
-                }).join('');
-
+                // 将状态和预测值拼接在同一行
+                const getStatusHTML = (pred, isHit) => {
+                    if (pred === '-') return `<span class="review-pred">-</span>`;
+                    return `
+                        <div class="review-cell-content">
+                            <span class="review-pred">${pred}</span>
+                            <span class="review-status ${isHit ? 'hit' : 'miss'}">${isHit ? '✅' : '❌'}</span>
+                        </div>
+                    `;
+                };
                 html += `
                     <tr>
                         <td style="font-weight:500;">${rev.match}</td>
-                        <td style="font-weight:600;color:#333;">${rev.actualScore}</td>
-                        <td class="rev-pred">${rev.predWDL}</td>
-                        <td class="rev-pred">${rev.predHandicap}</td>
-                        <td class="rev-pred">${rev.predTG}</td>
-                        <td class="rev-pred">${rev.predHF}</td>
-                        <td class="rev-pred">${rev.predCS}</td>
-                        <td><div class="rev-status-wrap">${statusHtml}</div></td>
+                        <td style="font-weight:600; color:#1e293b;">${rev.actualScore}</td>
+                        <td>${getStatusHTML(rev.predWDL, rev.isHitWDL)}</td>
+                        <td>${getStatusHTML(rev.predHandicap, rev.isHitHandicap)}</td>
+                        <td>${getStatusHTML(rev.predTG, rev.isHitTG)}</td>
+                        <td>${getStatusHTML(rev.predHF, rev.isHitHF)}</td>
+                        <td>${getStatusHTML(rev.predCS, rev.isHitCS)}</td>
                     </tr>
                 `;
             }
             tbody.innerHTML = html;
         }
 
-        // ================= 4. 主入口 =================
+        // 主入口
         async function loadDashboard() {
             try {
                 const stateRes = await fetch(API_STATE);
-                if (!stateRes.ok) throw new Error('状态接口异常');
+                if (!stateRes.ok) throw new Error('接口连接超时');
                 const stateData = await stateRes.json();
 
                 renderFinished(stateData.finished || []);
@@ -356,21 +510,21 @@
                     upcomingBetsCS: stateData.upcomingBetsCS
                 });
 
-                // 拉取新的复盘报告（包含5大维度）
                 const reviewRes = await fetch(API_REVIEW);
                 if (reviewRes.ok) {
                     const reviewData = await reviewRes.json();
                     renderReviews(reviewData.reviews || []);
                 }
 
+                // 3分钟后台静默刷新
                 setTimeout(() => { location.reload(); }, 180000);
             } catch (error) {
                 document.body.innerHTML = `
-                    <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; text-align:center; padding:20px;">
-                        <i class="fa-solid fa-triangle-exclamation" style="font-size:3rem; color:#f59e0b; margin-bottom:15px;"></i>
-                        <h2 style="color:#333;">服务连接异常</h2>
-                        <p style="color:#888; margin:10px 0;">${error.message}</p>
-                        <button onclick="location.reload()" style="padding:10px 24px; background:#1f2937; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer; margin-top:10px;">重新加载</button>
+                    <div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column;">
+                        <i class="fa-solid fa-circle-exclamation" style="font-size:3rem; color:#f59e0b; margin-bottom:20px;"></i>
+                        <h2 style="color:#0f172a;">服务连接中断</h2>
+                        <p style="color:#64748b;">${error.message}</p>
+                        <button onclick="location.reload()" style="margin-top:20px; background:#1e293b; color:#fff; border:none; padding:12px 24px; border-radius:8px; font-weight:600; cursor:pointer;">重新加载</button>
                     </div>
                 `;
             }
