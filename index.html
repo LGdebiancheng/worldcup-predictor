@@ -4,251 +4,122 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>✨ 次元世界杯预言家 ✨</title>
-    <!-- 引入非常二次元的字体 -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
-    <!-- Font Awesome 图标库 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* 惊艳的背景设置 */
+        /* 极光星河背景 */
         body {
-            margin: 0;
-            padding: 20px;
+            margin: 0; padding: 20px;
             font-family: 'Noto Sans SC', sans-serif;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            background: #0b081a;
             color: #ffffff;
             min-height: 100vh;
             overflow-x: hidden;
+            position: relative;
         }
 
-        /* 全屏炫彩粒子背景（纯CSS实现） */
         body::before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: 
+                radial-gradient(ellipse at 20% 50%, rgba(123, 97, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(255, 102, 196, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(86, 196, 255, 0.1) 0%, transparent 50%);
+            z-index: -2;
+            animation: aurora 20s linear infinite alternate;
+        }
+
+        @keyframes aurora {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(-20px, 20px) scale(1.1); }
+        }
+
+        /* 星光粒子 */
+        body::after {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background-image: 
                 radial-gradient(2px 2px at 20px 30px, #eee, transparent),
                 radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
                 radial-gradient(2px 2px at 50px 160px, #ddd, transparent),
-                radial-gradient(2px 2px at 90px 40px, rgba(255,255,255,0.6), transparent),
-                radial-gradient(2px 2px at 130px 80px, #fff, transparent),
-                radial-gradient(2px 2px at 160px 30px, rgba(255,255,255,0.7), transparent);
+                radial-gradient(2px 2px at 90px 40px, rgba(255,255,255,0.6), transparent);
             background-size: 200px 200px;
-            opacity: 0.3;
-            pointer-events: none;
-            z-index: -1;
+            opacity: 0.4; pointer-events: none; z-index: -1;
         }
 
-        /* 顶部标题区 */
-        .hero-section {
-            position: relative;
-            text-align: center;
-            margin-bottom: 40px;
-            padding: 20px;
-        }
-        
+        /* 顶部英雄区 */
+        .hero-section { text-align: center; margin-bottom: 30px; padding: 20px; }
         .hero-title {
-            font-size: 3.5rem;
-            font-weight: 900;
+            font-size: 3.5rem; font-weight: 900;
             background: linear-gradient(90deg, #ff66c4, #7b61ff, #56c4ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 40px rgba(123, 97, 255, 0.3);
-            letter-spacing: 4px;
-            margin-bottom: 10px;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 30px rgba(123, 97, 255, 0.4));
+            letter-spacing: 4px; margin-bottom: 10px;
+            animation: textFlicker 3s ease-in-out infinite alternate;
         }
-
-        .hero-title i {
-            -webkit-text-fill-color: initial;
-            color: #ff66c4;
+        @keyframes textFlicker {
+            0% { filter: drop-shadow(0 0 20px rgba(123, 97, 255, 0.3)); }
+            100% { filter: drop-shadow(0 0 40px rgba(255, 102, 196, 0.6)); }
         }
-
         .hero-sub {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 1rem;
-            letter-spacing: 2px;
+            color: rgba(255, 255, 255, 0.5); font-size: 1rem; letter-spacing: 2px;
+            border: 1px solid rgba(255,255,255,0.1); display: inline-block;
+            padding: 8px 20px; border-radius: 30px; background: rgba(0,0,0,0.2);
         }
 
-        /* 二次元随机老婆展示区 */
-        .waifu-container {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            flex-wrap: wrap;
-            margin-bottom: 30px;
-        }
-
+        /* 绝对防挂二次元妹纸展示区 */
+        .waifu-container { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
         .waifu-card {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            overflow: hidden;
-            box-shadow: 0 0 20px rgba(123, 97, 255, 0.2);
+            width: 60px; height: 60px; border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.05);
-            transition: transform 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            box-shadow: 0 0 20px rgba(123, 97, 255, 0.2);
+            transition: all 0.3s ease; display: flex;
+            align-items: center; justify-content: center; overflow: hidden;
         }
-
-        .waifu-card:hover {
-            transform: scale(1.2) rotate(10deg);
-            border-color: #ff66c4;
-        }
-
-        .waifu-card img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+        .waifu-card:hover { transform: scale(1.2) rotate(10deg); border-color: #ff66c4; }
+        .waifu-card img { width: 100%; height: 100%; object-fit: cover; }
+        /* 图片加载失败的备用二次元图标 */
+        .waifu-card .fallback-icon { font-size: 2rem; color: #c4b5fd; animation: bounce 2s ease-in-out infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 
         /* 网格布局 */
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 25px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .dashboard-grid { display: grid; grid-template-columns: 1fr; gap: 25px; max-width: 1200px; margin: 0 auto; }
+        @media (min-width: 768px) { .dashboard-grid { grid-template-columns: 1fr 1fr; } .grid-full { grid-column: 1 / -1; } }
+        @media (min-width: 1024px) { .dashboard-grid { grid-template-columns: 1fr 1fr 1fr; } .grid-full { grid-column: 1 / -1; } }
 
-        @media (min-width: 768px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-            .grid-full {
-                grid-column: 1 / -1;
-            }
-        }
-
-        @media (min-width: 1024px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr 1fr 1fr;
-            }
-            .grid-full {
-                grid-column: 1 / -1;
-            }
-        }
-
-        /* 外部AI验证板块单独占满 */
-        .external-panel {
-            margin-bottom: 30px;
-        }
-
-        /* 玻璃态卡片 */
+        /* 霓虹发光毛玻璃卡片 */
         .card {
-            background: rgba(255, 255, 255, 0.06);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
+            position: relative; background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px; padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
+        .card:hover { transform: translateY(-5px); border-color: rgba(123, 97, 255, 0.4); }
+        .card-title { font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 10px; color: #c4b5fd; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px; }
+        .card-title i { color: #f472b6; }
 
-        .card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(123, 97, 255, 0.5);
-            box-shadow: 0 12px 40px rgba(123, 97, 255, 0.2);
-        }
-
-        .card-title {
-            font-size: 1.2rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #c4b5fd;
-            margin-bottom: 15px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding-bottom: 10px;
-        }
-
-        .card-title i {
-            color: #f472b6;
-        }
+        /* 💡 核心回退：仿竞彩风格的预测表 */
+        .prediction-table-wrapper { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: #d1d5db; }
+        th, td { padding: 14px 10px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        th { color: #a78bfa; font-weight: 700; background: rgba(255,255,255,0.03); white-space: nowrap; }
+        tr:hover { background: rgba(255,255,255,0.05); }
+        .match-time { color: #9ca3af; font-size: 0.85rem; }
+        .match-name { font-weight: 700; color: #e0e7ff; display: flex; justify-content: center; gap: 10px; align-items: center; }
+        .vs-text { color: #f472b6; font-size: 0.8rem; }
+        .pred-highlight { color: #fde047; font-weight: 700; } /* 预测高亮 */
+        .pred-conf { background: rgba(123, 97, 255, 0.2); padding: 2px 10px; border-radius: 20px; font-size: 0.8rem; color: #c4b5fd; }
 
         /* 投注明细列表 */
-        .bet-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 12px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-            margin-bottom: 8px;
-            font-size: 0.95rem;
-            align-items: center;
-        }
-        
-        .bet-item .bet-name {
-            color: #e0e7ff;
-        }
-
-        .bet-item .bet-amount {
-            font-weight: 900;
-            color: #fde047; /* 财气金光 */
-            background: rgba(253, 224, 71, 0.15);
-            padding: 2px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-        }
-
-        /* 外部预测表格 */
-        .external-table-wrapper {
-            overflow-x: auto;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-            color: #d1d5db;
-        }
-        
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-
-        th {
-            color: #a78bfa;
-            font-weight: 700;
-            background: rgba(255,255,255,0.03);
-        }
-
-        tr:hover {
-            background: rgba(255,255,255,0.05);
-        }
-
-        .td-prediction {
-            color: #e0e7ff;
-        }
+        .bet-item { display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(0, 0, 0, 0.2); border-radius: 10px; margin-bottom: 8px; font-size: 0.9rem; align-items: center; border-left: 3px solid transparent; transition: all 0.2s ease; }
+        .bet-item:hover { border-left: 3px solid #7b61ff; background: rgba(123, 97, 255, 0.1); }
+        .bet-item .bet-name { color: #e0e7ff; }
+        .bet-item .bet-amount { font-weight: 900; color: #fde047; background: rgba(253, 224, 71, 0.15); padding: 2px 12px; border-radius: 20px; font-size: 0.85rem; }
 
         /* 加载动画 */
-        .loading-spinner {
-            text-align: center;
-            color: #c4b5fd;
-            font-size: 1.2rem;
-            padding: 20px;
-        }
+        .loading-spinner { text-align: center; color: #9ca3af; font-size: 0.9rem; padding: 20px; }
+        .loading-spinner i { margin-right: 10px; }
 
-        .loading-spinner i {
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* 自适应移动端 */
-        @media (max-width: 600px) {
-            .hero-title { font-size: 2.2rem; }
-            .waifu-card { width: 50px; height: 50px; }
-        }
+        @media (max-width: 600px) { .hero-title { font-size: 2rem; } .waifu-card { width: 40px; height: 40px; } .card-title { font-size: 0.95rem; } th, td { font-size: 0.8rem; padding: 10px 5px; } }
     </style>
 </head>
 <body>
@@ -256,105 +127,99 @@
     <!-- 顶部英雄区 -->
     <div class="hero-section">
         <div class="hero-title">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> 次元世界杯预言家
+            <i class="fa-regular fa-star" style="color:#ff66c4; -webkit-text-fill-color:initial;"></i> 
+            次元世界杯预言家 
+            <i class="fa-regular fa-star" style="color:#56c4ff; -webkit-text-fill-color:initial;"></i>
         </div>
-        <div class="hero-sub">⚡ 24小时全自动AI深度博弈推演 · 战前必看 ⚡</div>
+        <div class="hero-sub"><i class="fa-solid fa-bolt"></i> 24小时全自动AI深度博弈推演 · 战前必看 <i class="fa-solid fa-bolt"></i></div>
     </div>
 
-    <!-- 超可爱二次元老婆悬浮展示区 -->
-    <div class="waifu-container" id="waifu-container">
-        <!-- 通过 JS 随机生成几位可爱的妹纸头像 -->
-    </div>
+    <!-- 二次元妹纸展示区（绝对防挂，全球备用图源） -->
+    <div class="waifu-container" id="waifu-container"></div>
 
     <div class="dashboard-grid">
         
-        <!-- 1. 外部AI交叉验证板块 (全宽) -->
-        <div class="card grid-full external-panel" id="external-panel">
-            <div class="card-title">
-                <i class="fa-regular fa-eye"></i> 异界结界 · 外部AI平台交叉验证
-            </div>
-            <div class="external-table-wrapper">
-                <table id="external-table">
-                    <thead id="external-thead"></thead>
-                    <tbody id="external-tbody">
-                        <tr><td colspan="4" style="text-align:center; color:#9ca3af;">数据加载中...</td></tr>
+        <!-- 1. 🏆 核心还原：AI对阵预测列表 (仿竞彩风格) -->
+        <div class="card grid-full external-panel">
+            <div class="card-title"><i class="fa-solid fa-chart-simple"></i> 次元对决 · 今日AI赛果大预言</div>
+            <div class="prediction-table-wrapper">
+                <table id="upcoming-table">
+                    <thead>
+                        <tr>
+                            <th>开赛时间</th>
+                            <th>主队 VS 客队</th>
+                            <th>🏆 半全场</th>
+                            <th>🎯 正确比分</th>
+                            <th>💡 AI信心</th>
+                        </tr>
+                    </thead>
+                    <tbody id="upcoming-tbody">
+                        <tr><td colspan="5" style="text-align:center; color:#9ca3af;">正在跨越次元壁获取数据...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- 2. 综合最优策略 -->
-        <div class="card" id="board-overall">
-            <div class="card-title"><i class="fa-solid fa-crown"></i> 综合最优策略 (100元)</div>
-            <div id="list-overall"></div>
+        <!-- 2. 异界交叉验证平台 -->
+        <div class="card grid-full external-panel">
+            <div class="card-title"><i class="fa-regular fa-eye"></i> 异界结界 · <span style="color: #fde047;">外部AI平台交叉验证</span></div>
+            <div class="external-table-wrapper">
+                <table id="external-table">
+                    <thead id="external-thead"></thead>
+                    <tbody id="external-tbody">
+                        <tr><td colspan="4" style="text-align:center; color:#9ca3af;">正在连接异界通道...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <!-- 3. 胜平负专项 -->
-        <div class="card" id="board-wdl">
-            <div class="card-title"><i class="fa-solid fa-square-check"></i> 胜平负 (100元)</div>
-            <div id="list-wdl"></div>
-        </div>
+        <!-- 3. 6大资金策略板块 -->
+        <div class="card" id="board-overall"><div class="card-title"><i class="fa-solid fa-crown"></i> 综合最优策略 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-overall"></div></div>
+        <div class="card" id="board-wdl"><div class="card-title"><i class="fa-solid fa-square-check"></i> 胜平负 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-wdl"></div></div>
+        <div class="card" id="board-hdcp"><div class="card-title"><i class="fa-solid fa-handicap"></i> 让球胜平负 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-hdcp"></div></div>
+        <div class="card" id="board-tg"><div class="card-title"><i class="fa-solid fa-futbol"></i> 总进球数 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-tg"></div></div>
+        <div class="card" id="board-hf"><div class="card-title"><i class="fa-solid fa-arrow-right-arrow-left"></i> 半全场 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-hf"></div></div>
+        <div class="card" id="board-cs"><div class="card-title"><i class="fa-solid fa-bullseye"></i> 正确比分 <span style="color:#fde047; font-size:0.8rem;">(100元)</span></div><div id="list-cs"></div></div>
 
-        <!-- 4. 让球胜平负专项 -->
-        <div class="card" id="board-hdcp">
-            <div class="card-title"><i class="fa-solid fa-handicap"></i> 让球胜平负 (100元)</div>
-            <div id="list-hdcp"></div>
-        </div>
-
-        <!-- 5. 总进球数专项 -->
-        <div class="card" id="board-tg">
-            <div class="card-title"><i class="fa-solid fa-futbol"></i> 总进球数 (100元)</div>
-            <div id="list-tg"></div>
-        </div>
-
-        <!-- 6. 半全场专项 -->
-        <div class="card" id="board-hf">
-            <div class="card-title"><i class="fa-solid fa-arrow-right-arrow-left"></i> 半全场 (100元)</div>
-            <div id="list-hf"></div>
-        </div>
-
-        <!-- 7. 正确比分专项 -->
-        <div class="card" id="board-cs">
-            <div class="card-title"><i class="fa-solid fa-bullseye"></i> 正确比分 (100元)</div>
-            <div id="list-cs"></div>
-        </div>
-
-        <!-- 8. 系统战绩墙（复盘） -->
+        <!-- 4. 历史复盘与总结 -->
         <div class="card grid-full">
-            <div class="card-title"><i class="fa-solid fa-book-journal-whills"></i> 历史推演总结报告</div>
-            <div id="review-container">系统正在复盘历史推演...</div>
+            <div class="card-title"><i class="fa-solid fa-book-journal-whills"></i> 过去时空 · <span style="color: #fde047;">推演回溯报告</span></div>
+            <div id="review-container" class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> 正在回溯历史虚影...</div>
         </div>
-
     </div>
 
     <script>
-        // 配置 API 路径
         const API_STATE = '/api/state';
         const API_REVIEW = '/api/review';
 
-        // 1. 拉取随机二次元老婆头像（使用全网免费接口）
+        // 1. 二次元头像加载（绝不断图）
         async function loadWaifus() {
             const container = document.getElementById('waifu-container');
-            // 随机显示 3-5 位
             const count = Math.floor(Math.random() * 3) + 3; 
             container.innerHTML = '';
             for (let i = 0; i < count; i++) {
                 const card = document.createElement('div');
                 card.className = 'waifu-card';
-                // 使用 Waifu.pics 接口（完全免费，无需密钥）
                 const img = document.createElement('img');
-                img.src = `https://api.waifu.pics/sfw/waifu?${Date.now() + i}`; // 加时间戳防止浏览器缓存同一张图
+                img.src = `https://api.waifu.pics/sfw/waifu?${Date.now() + i}`;
                 img.alt = '次元妹纸';
+                // 如果上方图床连不上，立刻切换为 DiceBear 全球极速像素风头像
+                img.onerror = function() {
+                    this.style.display = 'none';
+                    const fallbackIcon = document.createElement('i');
+                    fallbackIcon.className = 'fa-solid fa-user-astronaut fallback-icon';
+                    card.appendChild(fallbackIcon);
+                };
                 card.appendChild(img);
                 container.appendChild(card);
             }
         }
 
-        // 2. 渲染投注板块
+        // 2. 渲染6大投注板块
         function renderBetBoard(listId, bets) {
             const container = document.getElementById(listId);
             if (!bets || bets.length === 0) {
-                container.innerHTML = `<div class="loading-spinner"><i class="fa-solid fa-spinner"></i> 正在链接次元通道...</div>`;
+                container.innerHTML = `<div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> 正在链接次元通道...</div>`;
                 return;
             }
             container.innerHTML = bets.map(item => `
@@ -365,48 +230,71 @@
             `).join('');
         }
 
-        // 3. 渲染外部交叉验证表
+        // 3. 🏆 核心还原：渲染对阵预测表
+        function renderUpcomingMatches(upcomingList) {
+            const tbody = document.getElementById('upcoming-tbody');
+            if (!upcomingList || upcomingList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#9ca3af;">等待赛前推演生成...</td></tr>`;
+                return;
+            }
+            let html = '';
+            for (const match of upcomingList) {
+                const time = match.time || '--:--';
+                const home = match.home || '未知';
+                const away = match.away || '未知';
+                
+                // 提取最佳的预测结果 (b是挑选出来的最佳结果)
+                const best = match.best || {};
+                const predHF = (best.pred && best.pred.half_full) ? best.pred.half_full.prediction : '待定';
+                const predCS = (best.pred && best.pred.correct_score) ? best.pred.correct_score.prediction : '待定';
+                const confidence = best.confidence || 0;
+
+                html += `
+                    <tr>
+                        <td class="match-time">${time}</td>
+                        <td class="match-name">${home} <span class="vs-text">VS</span> ${away}</td>
+                        <td class="pred-highlight">${predHF}</td>
+                        <td class="pred-highlight">${predCS}</td>
+                        <td><span class="pred-conf">${confidence}%</span></td>
+                    </tr>
+                `;
+            }
+            tbody.innerHTML = html;
+        }
+
+        // 4. 渲染外部交叉验证表
         function renderExternalTable(data) {
             const thead = document.getElementById('external-thead');
             const tbody = document.getElementById('external-tbody');
-            
             if (!data || !data.aiNames || data.aiNames.length === 0 || !data.predictions || data.predictions.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#9ca3af;">等待异界信号接驳...</td></tr>`;
                 return;
             }
-
-            // 生成表头
             let headerHtml = `<tr><th>${data.aiNames[0]}</th>`;
             for (let i = 1; i < data.aiNames.length; i++) {
                 headerHtml += `<th><i class="fa-regular fa-gem"></i> ${data.aiNames[i]}</th>`;
             }
             headerHtml += `</tr>`;
             thead.innerHTML = headerHtml;
-
-            // 生成表体
             let bodyHtml = '';
             for (const row of data.predictions) {
-                let rowHtml = `<td class="td-prediction"><b>${row.match}</b></td>`;
-                for (const item of row.aiData) {
-                    rowHtml += `<td style="font-size: 0.85rem;">${item}</td>`;
-                }
+                let rowHtml = `<td class="match-name" style="justify-content:flex-start;">${row.match}</td>`;
+                for (const item of row.aiData) { rowHtml += `<td style="font-size: 0.85rem;">${item}</td>`; }
                 bodyHtml += `<tr>${rowHtml}</tr>`;
             }
             tbody.innerHTML = bodyHtml;
         }
 
-        // 4. 拉取复盘日志
+        // 5. 渲染历史复盘
         async function renderReviews() {
             try {
                 const res = await fetch(API_REVIEW);
                 const data = await res.json();
                 const container = document.getElementById('review-container');
-                
                 if (!data.reviews || data.reviews.length === 0) {
-                    container.innerHTML = `<div style="color:#9ca3af; text-align:center;">暂无推演记录，等待赛后自动生成...<i class="fa-regular fa-face-smile"></i></div>`;
+                    container.innerHTML = `<div style="color:#9ca3af; text-align:center;">暂无推演记录，等待赛后自动生成...</div>`;
                     return;
                 }
-
                 let html = `<div class="external-table-wrapper"><table><thead><tr>
                     <th>赛事</th><th>实际比分</th><th>推演半全场</th><th>推演比分</th><th>半全场</th><th>比分</th>
                 </tr></thead><tbody>`;
@@ -414,10 +302,10 @@
                     const hfIcon = rev.isHitHF ? '✅' : '❌';
                     const csIcon = rev.isHitCS ? '✅' : '❌';
                     html += `<tr>
-                        <td class="td-prediction">${rev.match}</td>
+                        <td class="match-name" style="justify-content:flex-start;">${rev.match}</td>
                         <td>${rev.actualScore}</td>
-                        <td>${rev.predictedHF}</td>
-                        <td>${rev.predictedCS}</td>
+                        <td class="pred-highlight">${rev.predictedHF}</td>
+                        <td class="pred-highlight">${rev.predictedCS}</td>
                         <td style="font-size:1.2rem;">${hfIcon}</td>
                         <td style="font-size:1.2rem;">${csIcon}</td>
                     </tr>`;
@@ -429,39 +317,30 @@
             }
         }
 
-        // 5. 主程序入口
+        // 6. 主程序入口
         async function loadDashboard() {
             try {
-                // 先加载二次元老婆们
                 loadWaifus();
-
-                // 拉取后台核心推演数据
                 const res = await fetch(API_STATE);
                 if (!res.ok) throw new Error("数据加载失败");
                 const data = await res.json();
 
-                // 渲染6大板块
+                // 🌟 渲染全新的对阵预测表
+                renderUpcomingMatches(data.upcoming || []);
+
                 renderBetBoard('list-overall', data.upcomingBetsOverall);
                 renderBetBoard('list-wdl', data.upcomingBetsWinDrawLose);
                 renderBetBoard('list-hdcp', data.upcomingBetsHandicap);
                 renderBetBoard('list-tg', data.upcomingBetsTotalGoals);
                 renderBetBoard('list-hf', data.upcomingBetsHF);
                 renderBetBoard('list-cs', data.upcomingBetsCS);
-
-                // 渲染外部AI验证表
                 renderExternalTable(data.externalPredictions);
-
-                // 渲染历史复盘
                 renderReviews();
 
-                // 每 3 分钟自动刷新页面数据（配合后端的推演）
-                setTimeout(() => {
-                    location.reload();
-                }, 180000);
-
+                setTimeout(() => { location.reload(); }, 180000);
             } catch (error) {
                 document.body.innerHTML = `
-                    <div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; color:white;">
+                    <div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; color:white; background:#0b081a;">
                         <i class="fa-solid fa-ghost" style="font-size:5rem; margin-bottom:20px;"></i>
                         <h1>次元通道暂时不通</h1>
                         <p style="color:#9ca3af;">${error.message}</p>
@@ -470,7 +349,6 @@
                 `;
             }
         }
-
         document.addEventListener('DOMContentLoaded', loadDashboard);
     </script>
 </body>
