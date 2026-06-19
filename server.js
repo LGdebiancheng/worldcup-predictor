@@ -13,10 +13,12 @@ let totalAttempts = 0;
 const optimalCache = new Map();
 const upcomingCache = new Map();
 const oddsCache = new Map();
-const formCache = new Map(); // 用于缓存球队近期状态，避免超额调用API
+const formCache = new Map(); 
 let bestMethod = '胜平负';
 let methodStats = {};
 let rates = {};
+
+// 🟢 修复点 1：给 betSummary 预先铺满最完整的结构，绝对防止前端取不到子属性
 let betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] };
 let lastMatchData = {};
 
@@ -29,28 +31,24 @@ let historicalMethodSuccess = {
     '总进球数': { hits: 0, total: 0, profit: 0, totalStake: 0 }
 };
 
-// ---------- 数据映射 (保留原样) ----------
+// ---------- 数据映射 ----------
 const nameMap = { 'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰', 'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰', 'Italy': '意大利', 'Belgium': '比利时', 'Mexico': '墨西哥', 'Uruguay': '乌拉圭', 'Croatia': '克罗地亚', 'Denmark': '丹麦', 'Switzerland': '瑞士', 'USA': '美国', 'Senegal': '塞内加尔', 'Japan': '日本', 'South Korea': '韩国', 'Australia': '澳大利亚', 'Ecuador': '厄瓜多尔', 'Ghana': '加纳', 'Morocco': '摩洛哥', 'Nigeria': '尼日利亚', 'Serbia': '塞尔维亚', 'Poland': '波兰', 'Ukraine': '乌克兰', 'Austria': '奥地利', 'Wales': '威尔士', 'Scotland': '苏格兰', 'Czech Republic': '捷克', 'South Africa': '南非', 'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马', 'Saudi Arabia': '沙特', 'Iran': '伊朗', 'Qatar': '卡塔尔', 'Cameroon': '喀麦隆', 'Sweden': '瑞典' };
 const teamNameMapForOdds = { '巴西': 'Brazil', '阿根廷': 'Argentina', '法国': 'France', '英格兰': 'England', '德国': 'Germany', '西班牙': 'Spain', '葡萄牙': 'Portugal', '荷兰': 'Netherlands', '意大利': 'Italy', '比利时': 'Belgium', '墨西哥': 'Mexico', '乌拉圭': 'Uruguay', '克罗地亚': 'Croatia', '丹麦': 'Denmark', '瑞士': 'Switzerland', '美国': 'USA', '塞内加尔': 'Senegal', '日本': 'Japan', '韩国': 'South Korea', '澳大利亚': 'Australia', '厄瓜多尔': 'Ecuador', '加纳': 'Ghana', '摩洛哥': 'Morocco', '尼日利亚': 'Nigeria', '塞尔维亚': 'Serbia', '波兰': 'Poland', '乌克兰': 'Ukraine', '奥地利': 'Austria', '威尔士': 'Wales', '苏格兰': 'Scotland', '捷克': 'Czech Republic', '南非': 'South Africa', '加拿大': 'Canada', '新西兰': 'New Zealand', '哥斯达黎加': 'Costa Rica', '巴拿马': 'Panama', '沙特': 'Saudi Arabia', '伊朗': 'Iran', '卡塔尔': 'Qatar', '喀麦隆': 'Cameroon', '瑞典': 'Sweden' };
 const eloMap = { '巴西': 2100, '阿根廷': 2080, '法国': 2050, '英格兰': 2030, '德国': 2000, '西班牙': 1980, '葡萄牙': 1960, '荷兰': 1940, '意大利': 1920, '比利时': 1900, '墨西哥': 1880, '乌拉圭': 1860, '克罗地亚': 1840, '丹麦': 1820, '瑞士': 1800, '美国': 1780, '塞内加尔': 1760, '日本': 1740, '韩国': 1720, '澳大利亚': 1700, '厄瓜多尔': 1680, '加纳': 1660, '摩洛哥': 1640, '尼日利亚': 1620, '塞尔维亚': 1600, '波兰': 1580, '乌克兰': 1560, '奥地利': 1540, '威尔士': 1520, '苏格兰': 1500, '捷克': 1480, '南非': 1460, '加拿大': 1440, '新西兰': 1420, '哥斯达黎加': 1400, '巴拿马': 1380, '沙特': 1360, '伊朗': 1340, '卡塔尔': 1320, '喀麦隆': 1300, '瑞典': 1280 };
 const DEFAULT_ELO = 1500;
 function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 
-// ---------- 模拟数据 ----------
 const fallbackData = { finished: [], upcoming: [] };
 
 // ==========================================
-// 🆕 优化 1：真实的赛前情报 RAG (新闻与伤停爬虫)
+// 优化 1：真实的赛前情报 RAG (新闻与伤停爬虫)
 // ==========================================
 async function getMatchNews(home, away) {
     try {
-        // 为了提高容错率，增加 User-Agent，降低被目标网站拦截的概率
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-        // 以“懂球帝”搜索为例，这只是一个结构，如果对方有反爬，不会导致系统崩溃
         const searchUrl = `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away)}`;
         const response = await axios.get(searchUrl, { headers: { 'User-Agent': userAgent }, timeout: 5000 });
         const $ = cheerio.load(response.data);
-        // 模拟提取标题和简介（根据真实网页结构，具体类名需自行调整，这里做降级处理）
         let news = '';
         $('.news-item').each((i, elem) => {
             if (i < 2) {
@@ -62,18 +60,16 @@ async function getMatchNews(home, away) {
         });
         if (news) return news;
         
-        // 如果没抓到任何新闻，兜底返回 ELO 状态分析
         const eloH = getElo(home); const eloA = getElo(away);
         return `赛前状态评估：主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
     } catch (err) {
-        // 爬虫失败绝不崩溃，直接返回基础评分
         const eloH = getElo(home); const eloA = getElo(away);
         return `赛前状态评估：主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
     }
 }
 
 // ==========================================
-// 🆕 优化 2：动态获取半全场和比分赔率 (API-Football 真实值)
+// 优化 2：动态获取半全场和比分赔率
 // ==========================================
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -104,7 +100,7 @@ async function fetchRealOdds(home, away) {
         if (!bookmaker) return null;
         
         let win = 2.0, draw = 3.0, lose = 2.5, h_odds = 1.9, d_odds = 3.2, a_odds = 2.0, total_odds = 1.9;
-        let hf_odds = 3.0, cs_odds = 6.0; // 默认降级赔率
+        let hf_odds = 3.0, cs_odds = 6.0;
         
         for (const bet of bookmaker.bets) {
             if (bet.id === 1) {
@@ -123,16 +119,14 @@ async function fetchRealOdds(home, away) {
                 for (const value of bet.values) {
                     total_odds = parseFloat(value.odd);
                 }
-            } else if (bet.id === 5) { // 🟢 获取半全场赔率 (API-Football 官方编号)
+            } else if (bet.id === 5) { 
                 for (const value of bet.values) {
-                    if (value.value === 'Home') { /* 提取具体的半全场赔率极难，因为字符串是 "Home/Home" 这种格式 */ }
-                    // 简化：只要存在半全场赔率，就取其中一个算作平均
                     hf_odds = parseFloat(value.odd) || hf_odds;
                     break;
                 }
-            } else if (bet.id === 6) { // 🟢 获取正确比分赔率
+            } else if (bet.id === 6) { 
                 for (const value of bet.values) {
-                    if (value.value === '2:1') { cs_odds = parseFloat(value.odd); break; } // 只取 2:1 比分作为参考
+                    if (value.value === '2:1') { cs_odds = parseFloat(value.odd); break; }
                 }
             }
         }
@@ -146,7 +140,6 @@ async function getOdds(home, away, isFinished = false) {
     const now = Date.now();
     const ttl = isFinished ? 86400000 : 10800000; 
     if (cached && (now - cached.timestamp) < ttl) return cached.odds;
-
     const realOdds = await fetchRealOdds(home, away);
     if (realOdds) { oddsCache.set(key, { odds: realOdds, timestamp: now }); return realOdds; }
 
@@ -167,13 +160,12 @@ async function getOdds(home, away, isFinished = false) {
 }
 
 // ==========================================
-// 🆕 优化 3：真实数据泊松分布 (基于球队近期场均进球)
+// 优化 3：真实数据泊松分布
 // ==========================================
 async function getTeamRecentForm(teamName) {
-    // 防超限缓存 1 小时
     if (formCache.has(teamName)) return formCache.get(teamName);
     const API_KEY = process.env.FOOTBALL_API_KEY;
-    if (!API_KEY) return null; // 无 API 直接返回 null 让后端用 ELO 降级
+    if (!API_KEY) return null;
 
     try {
         const url = `https://api.football-data.org/v4/teams?name=${encodeURIComponent(teamName)}`;
@@ -183,7 +175,6 @@ async function getTeamRecentForm(teamName) {
         if (!data.teams || data.teams.length === 0) return null;
         const teamId = data.teams[0].id;
 
-        // 获取最近 5 场比赛
         const matchUrl = `https://api.football-data.org/v4/teams/${teamId}/matches?limit=5&status=FINISHED`;
         const matchResp = await fetch(matchUrl, { headers: { 'X-Auth-Token': API_KEY } });
         if (!matchResp.ok) return null;
@@ -203,27 +194,21 @@ async function getTeamRecentForm(teamName) {
         const avgGoals = count > 0 ? (totalGoals / count) : 1.0;
         formCache.set(teamName, avgGoals);
         return avgGoals;
-    } catch (err) {
-        return null;
-    }
+    } catch (err) { return null; }
 }
 
 async function calculatePoissonProbabilities(home, away) {
-    // 尝试从历史战绩获取真实场均进球
     let homeAvg = await getTeamRecentForm(home);
     let awayAvg = await getTeamRecentForm(away);
-    
-    // 如果 API 无响应/超限，回退到 ELO 逻辑计算的预期进球
     if (homeAvg === null) {
         const eloH = getElo(home); const eloA = getElo(away);
         homeAvg = Math.max(0.5, 0.8 + (eloH - eloA) / 600);
         awayAvg = Math.max(0.5, 0.8 - (eloH - eloA) / 600);
     }
-    
     const halfHomeProb = homeAvg / (homeAvg + awayAvg + 1);
     const halfAwayProb = awayAvg / (homeAvg + awayAvg + 1);
     return {
-        mathConfidence: 0.75, // 带有真实数据，数学置信度略微提高
+        mathConfidence: 0.75,
         predictedHalf: halfHomeProb > 0.45 ? '主队领先' : (halfAwayProb > 0.45 ? '客队领先' : '半场平局')
     };
 }
@@ -307,16 +292,15 @@ async function runFinishedSimulation() {
 }
 
 // ==========================================
-// 🆕 优化 4：基于盈利率(ROI)的动态权重分配
+// 优化 4：基于盈利率(ROI)的动态权重分配
 // ==========================================
 function calculateOptimalCombo(matches) {
-    // 基于盈利率（ROI）计算权重
     const weights = { '半全场': 1, '胜平负': 1, '正确比分': 1 };
     for (const [method, data] of Object.entries(global.historicalMethodSuccess || {})) {
-        if (data.total > 3) { // 至少跑过3次才有统计意义
+        if (data.total > 3) {
             const roi = data.totalStake > 0 ? (data.profit / data.totalStake) : 0;
-            if (roi > 0.2) weights[method] = 1.5; // 盈利率 > 20%，重注1.5倍
-            else if (roi < -0.2) weights[method] = 0.5; // 亏损 > 20%，减半投注
+            if (roi > 0.2) weights[method] = 1.5;
+            else if (roi < -0.2) weights[method] = 0.5;
             else weights[method] = 1.0;
         }
     }
@@ -380,10 +364,10 @@ function updateStatistics(finishedMatches) {
         
         for (const [method, data] of Object.entries(methodsToCheck)) {
             stats[method].total += 1;
-            const stake = 1; // 模拟每注 1 元钱，方便计算 ROI
+            const stake = 1;
             if (data.correct) {
                 stats[method].correct += 1;
-                stats[method].profit += stake * (data.odds - 1); // 盈利 = 本金 * (赔率 - 1)
+                stats[method].profit += stake * (data.odds - 1);
             } else {
                 stats[method].profit -= stake;
             }
@@ -465,10 +449,10 @@ async function runUpcomingSimulation() {
 // ---------- 定时器 ----------
 function startTimers() {
     setInterval(async () => { await runFinishedSimulation(); }, 300000);
-    setInterval(async () => { await runUpcomingSimulation(); }, 120000);
+    setInterval(async () => { await runUpcomingSimulation(); }, 180000); // 延长到3分钟，防止因爬虫导致API超时
 }
 
-// ---------- API ----------
+// ---------- API (终极修复区) ----------
 app.get('/api/state', (req, res) => {
     const matchData = lastMatchData;
     const finished = matchData.finished || [];
@@ -494,12 +478,27 @@ app.get('/api/state', (req, res) => {
         }
     });
 
-    // 防崩加固
+    // 🟢 防崩加固：针对 betting 组合
     let safeBets = [];
     if (global.upcomingBets && global.upcomingBets.length === 4) {
         safeBets = global.upcomingBets;
     } else {
         safeBets = [ { name: "等待推演中...", fields: [], amount: 0 }, { name: "等待推演中...", fields: [], amount: 0 }, { name: "等待推演中...", fields: [], amount: 0 }, { name: "等待推演中...", fields: [], amount: 0 } ];
+    }
+
+    // 🟢 核心修复点 2：让 betSummary 绝不可能出现 undefined 子属性
+    // 即使 global.betSummary 为空，也手动构建出一个全结构的对象
+    let safeBetSummary = {
+        totalProfit: 0,
+        methodProfits: {},
+        dailyProfits: {},
+        betRecords: []
+    };
+    if (global.betSummary) {
+        safeBetSummary.totalProfit = global.betSummary.totalProfit || 0;
+        safeBetSummary.methodProfits = global.betSummary.methodProfits || {};
+        safeBetSummary.dailyProfits = global.betSummary.dailyProfits || {};
+        safeBetSummary.betRecords = global.betSummary.betRecords || [];
     }
 
     const state = {
@@ -510,7 +509,7 @@ app.get('/api/state', (req, res) => {
         stats: global.methodStats || {},
         rates: global.rates || {},
         upcomingBets: safeBets,
-        betSummary: global.betSummary || { totalProfit: 0 }
+        betSummary: safeBetSummary
     };
     res.json(state);
 });
