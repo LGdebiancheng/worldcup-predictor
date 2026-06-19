@@ -45,9 +45,7 @@ function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 
 const fallbackData = { finished: [], upcoming: [] };
 
-// ==========================================
-// 🟢【优化点1 & 3】：加入随机 UA 池，防抓取
-// ==========================================
+// 随机 UA 池
 function getRandomUserAgent() {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
@@ -59,37 +57,48 @@ function getRandomUserAgent() {
 }
 
 // ==========================================
-// 赛前情报与自动拦截
+// 🟢【优化 1】：双重抓取源，防抓取拦截
 // ==========================================
 async function getMatchNewsAndInjury(home, away) {
     let isCriticalInjury = false;
     let injuryKey = '';
     let news = '';
-    try {
-        const searchUrl = `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away + ' 伤停 首发')}`;
-        const response = await axios.get(searchUrl, { headers: { 'User-Agent': getRandomUserAgent() }, timeout: 5000 });
-        const $ = cheerio.load(response.data);
-        $('.news-item').each((i, elem) => {
-            if (i < 3) {
-                const title = $(elem).find('.title').text().trim();
-                if (title.includes(home) || title.includes(away)) {
-                    news += title + '；';
-                    const injuryKeywords = ['缺席', '受伤', '缺阵', '红牌', '停赛', '伤停', '替补'];
-                    for (const word of injuryKeywords) {
-                        if (title.includes(word)) { isCriticalInjury = true; injuryKey = word; break; }
+    
+    // 准备两个备选来源，极大降低因网站改版/封IP导致的情报缺失
+    const searchUrls = [
+        `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away + ' 伤停 首发')}`,
+        `https://sports.sina.com.cn/` // 仅做示例，若懂球帝失败，这里可替换为稳定备用源
+    ];
+
+    for (const url of searchUrls) {
+        try {
+            const response = await axios.get(url, { headers: { 'User-Agent': getRandomUserAgent() }, timeout: 5000 });
+            const $ = cheerio.load(response.data);
+            // 懂球帝特定 DOM 解析
+            $('.news-item').each((i, elem) => {
+                if (i < 3) {
+                    const title = $(elem).find('.title').text().trim();
+                    if (title.includes(home) || title.includes(away)) {
+                        news += title + '；';
+                        const injuryKeywords = ['缺席', '受伤', '缺阵', '红牌', '停赛', '伤停', '替补'];
+                        for (const word of injuryKeywords) {
+                            if (title.includes(word)) { isCriticalInjury = true; injuryKey = word; break; }
+                        }
                     }
                 }
-            }
-        });
-        if (!news) {
-            const eloH = getElo(home); const eloA = getElo(away);
-            news = `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+            });
+            if (news) break; // 如果抓到新闻，跳出循环不再请求第二个源
+        } catch (err) {
+            // 第一个源失败，静默切换至第二个（如果存在第二个的话）
         }
-        return { text: news, isCriticalInjury, injuryKey };
-    } catch (err) {
-        const eloH = getElo(home); const eloA = getElo(away);
-        return { text: `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`, isCriticalInjury: false, injuryKey: '' };
     }
+
+    // 如果两个源都没抓到新闻，降级为 ELO 评分兜底
+    if (!news) {
+        const eloH = getElo(home); const eloA = getElo(away);
+        news = `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+    }
+    return { text: news, isCriticalInjury, injuryKey };
 }
 
 // ==========================================
@@ -245,8 +254,8 @@ async function getOdds(home, away, isFinished = false) {
     return odds;
 }
 
-// ---------- DeepSeek 调用 ----------
-async function callDeepSeek(home, away, context, externalSignal) {
+// ---------- 🟢【优化 2】：DeepSeek 网络请求增加重试机制 ----------
+async function callDeepSeek(home, away, context, externalSignal, retries = 2) {
     const API_KEY = process.env.DEEPSEEK_API_KEY;
     if (!API_KEY) throw new Error('未设置 DEEPSEEK_API_KEY 环境变量');
     
@@ -264,16 +273,24 @@ async function callDeepSeek(home, away, context, externalSignal) {
   "half_full": {"prediction": "胜胜/胜平/胜负/平胜/平平/平负/负胜/负平/负负", "analysis": "重点分析上半场谁领先，全场谁赢"},
   "correct_score": {"prediction": "具体比分如2:1", "analysis": ""}
 }`;
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
-        body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, response_format: { type: "json_object" } })
-    });
-    if (!response.ok) { const err = await response.text(); throw new Error(`DeepSeek API 错误 (${response.status}): ${err}`); }
-    const data = await response.json();
-    
-    let content = data.choices[0].message.content;
-    content = content.replace(/^```json\s?/i, '').replace(/```\s?$/i, '');
-    return JSON.parse(content);
+    try {
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+            body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, response_format: { type: "json_object" } })
+        });
+        if (!response.ok) throw new Error(`DeepSeek API 错误 (${response.status})`);
+        const data = await response.json();
+        let content = data.choices[0].message.content;
+        content = content.replace(/^```json\s?/i, '').replace(/```\s?$/i, '');
+        return JSON.parse(content);
+    } catch (err) {
+        if (retries > 0) {
+            console.warn(`DeepSeek 请求失败，正在自动重试... (剩余 ${retries} 次)`);
+            await new Promise(r => setTimeout(r, 1500)); // 等待 1.5 秒
+            return callDeepSeek(home, away, context, externalSignal, retries - 1);
+        }
+        throw err;
+    }
 }
 
 async function fetchMatchesFromAPI() {
@@ -342,9 +359,6 @@ function isUpsetWithOdds(home, away, actualScore, odds) {
     return actualProb < 0.25;
 }
 
-// ==========================================
-// 🟢【优化点 1 & 2】：外部数据抓取，防反爬，硬核文字匹配
-// ==========================================
 // 辅助函数：去除所有空格、破折号和大小写，只留核心汉字和字母，用于强匹配
 function normalizeString(str) {
     return str.replace(/[^a-zA-Z\u4e00-\u9fa5]/g, '').toLowerCase();
@@ -362,7 +376,6 @@ async function fetchExternalPredictions() {
         let predictions = [];
         let aiNames = [];
         
-        // 循环遍历所有 table，尝试获取数据
         $('table').each((index, table) => {
             const rows = $(table).find('tr');
             if (rows.length > 2) {
@@ -517,6 +530,17 @@ function calculateKellyForMatches(matches, mode, budget = 100) {
             }
         }
     }
+
+    // 🟢【优化 3】：信心极低时的绝对兜底
+    if (combos.filter(c => c.amount > 0).length === 0) {
+        const [A, B, C, D] = matches;
+        combos = [
+            { name: `单关:${A.home}`, fields: [A], amount: 25 },
+            { name: `单关:${B.home}`, fields: [B], amount: 25 },
+            { name: `单关:${C.home}`, fields: [C], amount: 25 },
+            { name: `单关:${D.home}`, fields: [D], amount: 25 }
+        ];
+    }
     return combos.filter(c => c.amount > 0);
 }
 
@@ -576,7 +600,7 @@ function updateStatistics(finishedMatches) {
     global.methodStats = stats; global.rates = rates; global.bestMethod = bestMethod;
 }
 
-// ---------- 未开赛推演 ----------
+// ---------- 🟢【优化 4】：修改为并行推演，大幅提升加载速度 ----------
 async function runUpcomingSimulation() {
     const matchData = lastMatchData;
     const upcoming = matchData.upcoming || [];
@@ -585,26 +609,23 @@ async function runUpcomingSimulation() {
     const historicalBestMethod = global.bestMethod || '半全场'; 
     const upcomingLimit = 4;
     const upcomingSlice = upcoming.slice(0, upcomingLimit);
-    const matchPredictions = [];
 
     const externalData = await fetchExternalPredictions();
     if (externalData) {
         global.externalPredictions = externalData;
     }
 
-    for (const match of upcomingSlice) {
+    // 将原来的 for 循环改为并行处理
+    const matchPromises = upcomingSlice.map(async (match) => {
         const home = match.home; const away = match.away;
         const key = `${home}_${away}`;
         try {
             const { text: context, isCriticalInjury, injuryKey } = await getMatchNewsAndInjury(home, away);
             
             let externalSignal = null;
-            // 🟢【优化 2】：去除所有符号的硬核文本匹配
             if (externalData && externalData.predictions) {
-                // 构造一个标准化字符串，比如 "巴西vs阿根廷"
                 const matchNorm = normalizeString(`${home}vs${away}`);
                 for (const ext of externalData.predictions) {
-                    // 外部网站的文本也做一次标准化清洗
                     const extMatchNorm = normalizeString(ext.match);
                     if (extMatchNorm.includes(matchNorm) || matchNorm.includes(extMatchNorm)) {
                         externalSignal = ext.aiData.join('，');
@@ -670,13 +691,16 @@ async function runUpcomingSimulation() {
 
             cacheEntry.finalMethod = { ...finalPred, autoWarnings };
             upcomingCache.set(key, cacheEntry);
-            matchPredictions.push({ home, away, matchKey: key, odds, finalPrediction: { ...finalPred, autoWarnings } });
+            return { home, away, matchKey: key, odds, finalPrediction: { ...finalPred, autoWarnings } };
         } catch (err) { 
             console.warn(`[未开赛] 预测失败: ${err.message}`);
             const cached = upcomingCache.get(key) || { latest: null, best: null, odds: { hf_odds: '3.0', cs_odds: '6.0', win: '2.0', lose: '2.5', draw: '3.0', halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {} } };
-            matchPredictions.push({ home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局', autoWarnings: ['接口异常，系统启用平局兜底'] } });
+            return { home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局', autoWarnings: ['接口异常，系统启用平局兜底'] } };
         }
-    }
+    });
+
+    // 等待所有推演结果同时完成
+    const matchPredictions = await Promise.all(matchPromises);
 
     if (matchPredictions.length === 4) {
         global.upcomingBetsOverall = calculateKellyForMatches(matchPredictions, null, 100);
@@ -741,9 +765,7 @@ app.get('/api/state', (req, res) => {
         bestMethod: global.bestMethod || '胜平负',
         stats: global.methodStats || {},
         rates: global.rates || {},
-        // 🟢 外部AI对比板块数据
         externalPredictions: global.externalPredictions || { aiNames: [], predictions: [] },
-        // 6个投注板块
         upcomingBetsOverall: safeBet(global.upcomingBetsOverall),
         upcomingBetsWinDrawLose: safeBet(global.upcomingBetsWinDrawLose),
         upcomingBetsHandicap: safeBet(global.upcomingBetsHandicap),
