@@ -13,7 +13,7 @@ let totalAttempts = 0;
 const optimalCache = new Map();
 const upcomingCache = new Map();
 const oddsCache = new Map();
-const theOddsApiCache = new Map(); // 🟢【新增】：The Odds API 专用缓存
+const theOddsApiCache = new Map(); 
 const formCache = new Map(); 
 let bestMethod = '胜平负';
 let methodStats = {};
@@ -40,7 +40,6 @@ const eloMap = { '巴西': 2100, '阿根廷': 2080, '法国': 2050, '英格兰':
 const DEFAULT_ELO = 1500;
 function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 
-// 🟢【修复点1】：即使 API 抓不到赔率，也保证能推演你截图里的 4 场比赛
 const fallbackData = { 
     finished: [], 
     upcoming: [
@@ -141,7 +140,7 @@ async function calculatePoissonProbabilities(home, away) {
 }
 
 // ==========================================
-// 🟢 双API保底赔率获取
+// 🟢【核心修复】：双API精准互补 + 映射补全机制
 // ==========================================
 async function fetchRealOddsFromAPIFootball(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -220,7 +219,6 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
         const response = await fetch(url);
         if (!response.ok) return null;
         const data = await response.json();
-        
         let matchData = null;
         for (const item of data) {
             if (item.home_team === homeEn && item.away_team === awayEn) {
@@ -235,7 +233,6 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
         let halfFullMap = {}, correctScoreMap = {};
         
         const bookmaker = matchData.bookmakers && matchData.bookmakers.length > 0 ? matchData.bookmakers[0] : null;
-        // 🟢【修复点2】：如果没有抓取到任何盘口数据，直接返回 null，触发系统 ELO 降级
         if (!bookmaker) {
             console.warn(`⚠️ The Odds API 未获取到 ${home} vs ${away} 的实时盘口，降级至系统模拟赔率`);
             return null;
@@ -284,11 +281,64 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
     }
 }
 
+// 🟢【核心修复入口】：必须强制执行映射补全
 async function fetchRealOdds(home, away) {
-    const apiFootballOdds = await fetchRealOddsFromAPIFootball(home, away);
+    // 1. 首先尝试 API-Football
+    let apiFootballOdds = await fetchRealOddsFromAPIFootball(home, away);
+    
+    // 2. 检查 API-Football 是否真的给出了具体的半全场和比分赔率
+    let isHalfFullReal = false;
+    let isCorrectScoreReal = false;
+    if (apiFootballOdds && apiFootballOdds.halfFullMap && Object.keys(apiFootballOdds.halfFullMap).length > 0) {
+        isHalfFullReal = true;
+    }
+    if (apiFootballOdds && apiFootballOdds.correctScoreMap && Object.keys(apiFootballOdds.correctScoreMap).length > 0) {
+        isCorrectScoreReal = true;
+    }
+
+    // 3. 如果 API-Football 提供了基础赔率，但缺少半全场或比分，则强制用 The Odds API 补全
+    if (apiFootballOdds && (!isHalfFullReal || !isCorrectScoreReal)) {
+        console.log(`⚠️ [强制补丁] 尝试使用 The Odds API 补充半全场/比分: ${home} vs ${away}`);
+        const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
+        if (theOddsAPIOdds) {
+            // 合并映射
+            if (theOddsAPIOdds.halfFullMap) {
+                apiFootballOdds.halfFullMap = theOddsAPIOdds.halfFullMap;
+                if (theOddsAPIOdds.halfFullMap['Home/Home']) {
+                    apiFootballOdds.hf_odds = theOddsAPIOdds.halfFullMap['Home/Home'].toFixed(2);
+                } else {
+                    // 如果不存在 Home/Home，取第一个有效赔率
+                    const firstKey = Object.keys(theOddsAPIOdds.halfFullMap)[0];
+                    if (firstKey) apiFootballOdds.hf_odds = theOddsAPIOdds.halfFullMap[firstKey].toFixed(2);
+                }
+            }
+            if (theOddsAPIOdds.correctScoreMap) {
+                apiFootballOdds.correctScoreMap = theOddsAPIOdds.correctScoreMap;
+                if (theOddsAPIOdds.correctScoreMap['2:1']) {
+                    apiFootballOdds.cs_odds = theOddsAPIOdds.correctScoreMap['2:1'].toFixed(2);
+                } else {
+                    // 如果不存在 2:1，取第一个有效比分赔率
+                    const firstKey = Object.keys(theOddsAPIOdds.correctScoreMap)[0];
+                    if (firstKey) apiFootballOdds.cs_odds = theOddsAPIOdds.correctScoreMap[firstKey].toFixed(2);
+                }
+            }
+            apiFootballOdds.from_real = true;
+            console.log(`✅ [补丁成功] ${home} vs ${away} 的半全场/比分赔率已通过 The Odds API 补全`);
+            return apiFootballOdds;
+        } else {
+            console.warn(`⚠️ [补丁失败] ${home} vs ${away} 沿用默认(降级至系统ELO模拟)`);
+            apiFootballOdds.from_real = false;
+            return apiFootballOdds;
+        }
+    }
+
+    // 4. 如果 API-Football 完美返回全部数据
     if (apiFootballOdds) return apiFootballOdds;
+
+    // 5. 如果 API-Football 完全失败，直接走 The Odds API
     const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
     if (theOddsAPIOdds) return theOddsAPIOdds;
+
     return null;
 }
 
