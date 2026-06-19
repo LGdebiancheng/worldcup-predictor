@@ -16,6 +16,9 @@ let rates = {};
 let betSummary = {};
 let lastMatchData = {};
 
+// 🚀【修复点1】 提前给 betSummary 初始化一个空壳，防止接口最先被访问时找不到
+global.betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] };
+
 // ---------- 中文映射 (保留原样) ----------
 const nameMap = {
     'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰',
@@ -66,7 +69,7 @@ function getElo(team) {
 
 // ---------- 模拟备选数据 (与原逻辑相同) ----------
 const fallbackData = {
-    finished: [], // 此处省略, 保持原代码fallback逻辑即可
+    finished: [],
     upcoming: []
 };
 
@@ -506,7 +509,9 @@ app.get('/api/state', (req, res) => {
         bestMethod: global.bestMethod || '胜平负',
         stats: global.methodStats || {},
         rates: global.rates || {},
-        upcomingBets: global.upcomingBets || [] // 🚀 返回100元的组合投注计划
+        upcomingBets: global.upcomingBets || [], // 🚀 返回100元的组合投注计划
+        // 🚀【修复点2】 这里加回了 betSummary，防止前端找不到属性崩溃
+        betSummary: global.betSummary || { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] }
     };
     res.json(state);
 });
