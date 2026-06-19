@@ -9,7 +9,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.7.2",
-    "cheerio": "^1.0.0-rc.12",
-    "groq-sdk": "^0.6.0"
+    "cheerio": "^1.0.0-rc.12"
   }
 }
