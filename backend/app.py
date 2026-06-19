@@ -10,12 +10,8 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-# 加载环境变量
 load_dotenv()
-
 app = FastAPI()
-
-# 解决跨域问题
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,22 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- 读取 API 密钥 ----------
+# ---------- 读取 5 个 API 密钥 ----------
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY")
 KIMI_KEY = os.getenv("KIMI_API_KEY")
 MINIMAX_KEY = os.getenv("MINIMAX_API_KEY")
 ZHIPU_KEY = os.getenv("ZHIPU_API_KEY")
 ALIBABA_KEY = os.getenv("ALIBABA_API_KEY")
 
-# ---------- 全局缓存 ----------
-CACHE = {
-    "predictions": None,
-    "last_update": None,
-    "is_updating": False,
-    "error_message": None
-}
+CACHE = {"predictions": None, "last_update": None, "is_updating": False}
 
-# ---------- 模拟比赛数据 ----------
 async def fetch_matches():
     return [
         {"id": 1, "home": "巴西", "away": "阿根廷"},
@@ -47,7 +36,6 @@ async def fetch_matches():
         {"id": 4, "home": "荷兰", "away": "西班牙"},
     ]
 
-# ---------- AI 调用函数（带超时保护和错误捕获） ----------
 async def call_deepseek(prompt: str) -> str:
     if not DEEPSEEK_KEY: return "Error: 未配置 DeepSeek API Key"
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -104,11 +92,7 @@ async def call_alibaba(prompt: str) -> str:
     if not ALIBABA_KEY: return "Error: 未配置 阿里百炼 API Key"
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     headers = {"Authorization": f"Bearer {ALIBABA_KEY}", "Content-Type": "application/json"}
-    data = {
-        "model": "qwen-turbo",
-        "input": {"messages": [{"role": "user", "content": prompt}]},
-        "parameters": {"result_format": "message", "temperature": 0.3, "max_tokens": 20}
-    }
+    data = {"model": "qwen-turbo", "input": {"messages": [{"role": "user", "content": prompt}]}, "parameters": {"result_format": "message", "temperature": 0.3, "max_tokens": 20}}
     try:
         async with httpx.AsyncClient() as client:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
@@ -117,120 +101,52 @@ async def call_alibaba(prompt: str) -> str:
     except Exception as e:
         return f"Error: {str(e)}"
 
-# ---------- 核心预测函数 ----------
 async def fetch_predictions_async():
     matches = await fetch_matches()
     if not matches: return None
-    
     results_by_match = {idx: {} for idx in range(len(matches))}
-    
     for idx, match in enumerate(matches):
         prompt = f"预测足球比赛最终比分，只回复比分（格式如 2-1），不要其他文字：{match['home']} vs {match['away']}"
-        print(f"-> [比赛 {idx+1}] 正在同时请求 5 个 AI 模型...")
-        
-        tasks = {
-            "DeepSeek": call_deepseek(prompt),
-            "Kimi": call_kimi(prompt),
-            "MiniMax": call_minimax(prompt),
-            "智谱": call_zhipu(prompt),
-            "阿里百炼": call_alibaba(prompt),
-        }
-        
+        print(f"-> [比赛 {idx+1}] 同时请求 5 个 AI...")
+        tasks = {"DeepSeek": call_deepseek(prompt), "Kimi": call_kimi(prompt), "MiniMax": call_minimax(prompt), "智谱": call_zhipu(prompt), "阿里百炼": call_alibaba(prompt)}
         batch_results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-        
         model_names = list(tasks.keys())
         for j, model_name in enumerate(model_names):
             result = batch_results[j]
             results_by_match[idx][model_name] = str(result) if not isinstance(result, Exception) else f"Error: {str(result)}"
-            
-            if "Error" in results_by_match[idx][model_name]:
-                print(f"   ❌ {model_name} 调用失败或超时: {results_by_match[idx][model_name]}")
-            else:
-                print(f"   ✅ {model_name} 预测成功: {results_by_match[idx][model_name]}")
-
-    predictions = []
-    all_scores = []
+    predictions, all_scores = [], []
     for idx, match in enumerate(matches):
         results = results_by_match[idx]
         valid_scores = [s for s in results.values() if not s.startswith("Error:")]
         consensus = Counter(valid_scores).most_common(1)[0][0] if valid_scores else "暂无有效预测"
-        
-        predictions.append({
-            "match": f"{match['home']} vs {match['away']}",
-            "predictions": results,
-            "consensus": consensus
-        })
+        predictions.append({"match": f"{match['home']} vs {match['away']}", "predictions": results, "consensus": consensus})
         all_scores.append(consensus)
-    
-    return {
-        "matches": predictions,
-        "global_consensus": Counter(all_scores).most_common(1)[0][0] if all_scores else "暂无",
-        "last_update": datetime.now().isoformat()
-    }
+    return {"matches": predictions, "global_consensus": Counter(all_scores).most_common(1)[0][0] if all_scores else "暂无", "last_update": datetime.now().isoformat()}
 
-# ---------- 后台更新函数 ----------
 async def update_cache_async():
     if CACHE["is_updating"]: return
     CACHE["is_updating"] = True
-    CACHE["error_message"] = None
     try:
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 开始拉取 5 个 AI 真实预测数据，请观察下方状态...")
-        start_time = time.time()
         result = await fetch_predictions_async()
-        elapsed = time.time() - start_time
-        
-        if result:
-            CACHE["predictions"] = result
-            CACHE["last_update"] = datetime.now().isoformat()
-            print(f"\n✅ 全部预测更新完成！共耗时 {elapsed:.1f}s。请去浏览器刷新页面。")
-        else:
-            CACHE["error_message"] = "获取预测失败"
-            print("❌ 更新失败")
-    except Exception as e:
-        CACHE["error_message"] = str(e)
-        print(f"❌ 更新程序整体出错: {e}")
-    finally:
-        CACHE["is_updating"] = False
+        if result: CACHE["predictions"], CACHE["last_update"] = result, datetime.now().isoformat()
+    except Exception as e: print(f"更新出错: {e}")
+    finally: CACHE["is_updating"] = False
 
-# ---------- 安全的异步任务包装器（修复定时任务崩溃问题） ----------
 def run_update_wrapper():
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(update_cache_async())
-    except RuntimeError:
-        asyncio.run(update_cache_async())
+    try: loop = asyncio.get_running_loop(); loop.create_task(update_cache_async())
+    except RuntimeError: asyncio.run(update_cache_async())
 
-# ---------- 启动时事件 ----------
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 服务器正在启动，立刻触发首次 AI 请求（请耐心等待 5~20秒）...")
-    # 首次启动时直接触发更新
     asyncio.create_task(update_cache_async())
-    
-    # 配置定时任务（每5分钟更新）
-    try:
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(run_update_wrapper, 'interval', minutes=5)
-        scheduler.start()
-        print("✅ 定时器已启动，每 5 分钟将刷新一次预测结果。\n")
-    except Exception as e:
-        # 就算定时任务崩了，也不会中断前端服务
-        print(f"⚠️ 定时器启动异常（不影响访问接口）: {e}")
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(run_update_wrapper, 'interval', minutes=5)
+    scheduler.start()
 
-# ---------- API 接口 ----------
 @app.get("/predict")
 async def get_predictions():
-    if CACHE["predictions"] is None:
-        return {
-            "status": "loading",
-            "message": "正在获取预测数据，请稍候...",
-        }
-    return {
-        "status": "ready",
-        "data": CACHE["predictions"],
-        "last_update": CACHE["last_update"]
-    }
+    if CACHE["predictions"] is None: return {"status": "loading", "message": "正在获取预测数据，请稍候..."}
+    return {"status": "ready", "data": CACHE["predictions"], "last_update": CACHE["last_update"]}
 
 @app.get("/")
-async def root():
-    return {"message": "AI 足球预测 API 运行中"}
+async def root(): return {"message": "AI 足球预测 API 运行中"}
