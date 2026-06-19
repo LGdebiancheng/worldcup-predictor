@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 
-// 引入新增依赖
+// 引入依赖
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -20,7 +20,7 @@ let rates = {};
 let betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] };
 let lastMatchData = {};
 
-// 新增：跟踪历史战绩，用于动态调整投注权重
+// 跟踪历史战绩，用于动态调整投注权重
 let historicalMethodSuccess = {
     '胜平负': { hits: 0, total: 0 },
     '半全场': { hits: 0, total: 0 },
@@ -89,7 +89,7 @@ const fallbackData = {
     ]
 };
 
-// ---------- 赔率获取 (保留原逻辑) ----------
+// ---------- 赔率获取 ----------
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) return null;
@@ -264,8 +264,8 @@ async function runFinishedSimulation() {
                 if (pred.win_draw_lose.prediction === actualSPF) score += 1;
                 const predTotal = parseInt(pred.total_goals.prediction);
                 if (!isNaN(predTotal) && predTotal === h + a) score += 1;
-                if (pred.half_full.prediction === actualSPF) score += 2; // 核心
-                if (pred.correct_score.prediction === actualScore) score += 3; // 核心
+                if (pred.half_full.prediction === actualSPF) score += 2; // 核心半全场
+                if (pred.correct_score.prediction === actualScore) score += 3; // 核心正确比分
                 if (score > bestScore) { bestScore = score; bestPred = pred; }
             } catch (err) { console.warn(`推演失败 ${home} vs ${away}:`, err.message); }
         }
@@ -361,7 +361,7 @@ function updateStatistics(finishedMatches) {
     global.methodStats = stats; global.rates = rates; global.bestMethod = bestMethod;
 }
 
-// ---------- 未开赛推演（核心聚合） ----------
+// ---------- 未开赛推演 ----------
 async function runUpcomingSimulation() {
     const matchData = lastMatchData;
     const upcoming = matchData.upcoming || [];
@@ -422,7 +422,7 @@ function startTimers() {
     setInterval(async () => { await runUpcomingSimulation(); }, 120000);
 }
 
-// ---------- API ----------
+// ---------- API 修复区 ----------
 app.get('/api/state', (req, res) => {
     const matchData = lastMatchData;
     const finished = matchData.finished || [];
@@ -448,6 +448,20 @@ app.get('/api/state', (req, res) => {
         }
     });
 
+    // ✅【核心修复】对 upcomingBets 进行前端防崩加固
+    let safeBets = [];
+    if (global.upcomingBets && global.upcomingBets.length === 4) {
+        safeBets = global.upcomingBets;
+    } else {
+        // 如果后台还没推演出4场，给前端发4个占位空壳，防止前端解析 undefined
+        safeBets = [
+            { name: "等待推演中...", fields: [], amount: 0 },
+            { name: "等待推演中...", fields: [], amount: 0 },
+            { name: "等待推演中...", fields: [], amount: 0 },
+            { name: "等待推演中...", fields: [], amount: 0 }
+        ];
+    }
+
     const state = {
         totalAttempts: totalAttempts,
         finished: finishedWithPred,
@@ -455,7 +469,7 @@ app.get('/api/state', (req, res) => {
         bestMethod: global.bestMethod || '胜平负',
         stats: global.methodStats || {},
         rates: global.rates || {},
-        upcomingBets: global.upcomingBets || [],
+        upcomingBets: safeBets, // ✅ 把修复好的安全数据给前端
         betSummary: global.betSummary || { totalProfit: 0 }
     };
     res.json(state);
