@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 足球预测大赛</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background-color: #f9f9f9; }
+        h1 { display: flex; align-items: center; gap: 10px; }
+        .header-sub { font-size: 14px; color: #666; margin-bottom: 20px; }
+        .section { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .section-title { font-weight: bold; font-size: 18px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .loading { color: #999; font-size: 14px; }
+        .error { color: #d32f2f; font-size: 14px; padding: 10px; background: #ffebee; border-radius: 4px; }
+        .result-item { padding: 12px 0; border-bottom: 1px solid #eee; }
+        .result-item:last-child { border-bottom: none; }
+        .badge { background-color: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 6px; font-weight: bold; }
+        .footer-note { font-size: 13px; color: #888; border-top: 1px solid #ddd; padding-top: 15px; margin-top: 20px; }
+        .consensus { background-color: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 4px; font-weight: bold; margin: 4px 0; display: inline-block;}
+        .fail-text { color: #999; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+    <h1>⚽ AI 足球预测大赛</h1>
+    <div class="header-sub">5个AI大模型同台竞技 · 完全真实调用</div>
+
+    <!-- 今日预测 -->
+    <div class="section">
+        <div class="section-title">📊 今日真实预测</div>
+        <div id="today-prediction">
+            <div class="loading">⏳ 正在向 AI 发起真实请求（预计等待 10~20 秒）...</div>
+        </div>
+    </div>
+
+    <div class="footer-note">⚠️ 预测仅供娱乐，不构成任何投注建议。</div>
+
+    <!-- 核心 JavaScript 逻辑 -->
+    <script>
+        // 👇 这里已经帮你写好了连接正确后端的端口 8000
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        async function loadPredictions() {
+            const container = document.getElementById('today-prediction');
+            
+            try {
+                // 发起真实请求
+                const response = await fetch(`${API_BASE_URL}/predict`);
+                if (!response.ok) throw new Error(`网络连接错误 (${response.status})`);
+                
+                const json = await response.json();
+
+                // 1. 如果后端还在请求大模型，处于 loading 状态
+                if (json.status === 'loading') {
+                    container.innerHTML = `<div class="loading">⏳ 后端正在同时请求 5 个大模型，请 10 秒后刷新浏览器...</div>`;
+                    return;
+                }
+
+                // 2. 如果拿到真实数据
+                if (json.status === 'ready' && json.data && json.data.matches) {
+                    const matches = json.data.matches;
+                    let htmlContent = '';
+
+                    matches.forEach(match => {
+                        // 解析每场比赛结果
+                        let predictionsHtml = '';
+                        for (const [model, result] of Object.entries(match.predictions)) {
+                            let displayResult = result;
+                            // 优化后台报错信息过长的问题
+                            if (displayResult.includes('429 Too Many Requests')) {
+                                displayResult = '<span class="fail-text">🚫 请求超限 (429)</span>';
+                            } else if (displayResult.includes('Error:')) {
+                                displayResult = '<span class="fail-text">⚠️ 调用失败</span>';
+                            }
+                            predictionsHtml += `<span class="badge">${model}</span> ${displayResult}<br>`;
+                        }
+
+                        htmlContent += `
+                            <div class="result-item">
+                                <div style="font-size:16px; font-weight:bold; margin-bottom:4px;">⚔️ ${match.match}</div>
+                                <div class="consensus">AI 多数共识: ${match.consensus}</div>
+                                <div style="margin-top:6px; font-size:14px; color:#444;">
+                                    ${predictionsHtml}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = htmlContent || '<div class="loading">暂无比赛数据</div>';
+                } else {
+                    container.innerHTML = '<div class="loading">后端数据异常，请检查控制台</div>';
+                }
+
+            } catch (error) {
+                console.error("前端请求失败:", error);
+                // 提示用户最可能的原因
+                container.innerHTML = `
+                    <div class="error">
+                        <b>⚠️ 连接后端失败</b><br>
+                        请务必检查 VS Code 下方后台终端：<br>
+                        1. 是否正在运行 <b style="background:#eee;padding:2px 6px;">uvicorn app:app --reload</b><br>
+                        2. 后端端口必须是 <b>8000</b> (不能是 5000)
+                    </div>
+                `;
+            }
+        }
+
+        // 页面一加载就执行
+        window.onload = loadPredictions;
+    </script>
+</body>
+</html>
