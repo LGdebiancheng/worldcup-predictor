@@ -20,7 +20,9 @@ let rates = {};
 let betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecords: [] };
 let lastMatchData = {};
 let previousOddsRecord = {}; 
+
 let externalPredictions = [];
+
 let matchDiary = [];
 
 let historicalMethodSuccess = {
@@ -31,7 +33,6 @@ let historicalMethodSuccess = {
     '正确比分': { hits: 0, total: 0, profit: 0, totalStake: 0 }
 };
 
-// ---------- 数据映射 ----------
 const nameMap = { 'Brazil': '巴西', 'Argentina': '阿根廷', 'France': '法国', 'England': '英格兰', 'Germany': '德国', 'Spain': '西班牙', 'Portugal': '葡萄牙', 'Netherlands': '荷兰', 'Italy': '意大利', 'Belgium': '比利时', 'Mexico': '墨西哥', 'Uruguay': '乌拉圭', 'Croatia': '克罗地亚', 'Denmark': '丹麦', 'Switzerland': '瑞士', 'USA': '美国', 'Senegal': '塞内加尔', 'Japan': '日本', 'South Korea': '韩国', 'Australia': '澳大利亚', 'Ecuador': '厄瓜多尔', 'Ghana': '加纳', 'Morocco': '摩洛哥', 'Nigeria': '尼日利亚', 'Serbia': '塞尔维亚', 'Poland': '波兰', 'Ukraine': '乌克兰', 'Austria': '奥地利', 'Wales': '威尔士', 'Scotland': '苏格兰', 'Czech Republic': '捷克', 'South Africa': '南非', 'Canada': '加拿大', 'New Zealand': '新西兰', 'Costa Rica': '哥斯达黎加', 'Panama': '巴拿马', 'Saudi Arabia': '沙特', 'Iran': '伊朗', 'Qatar': '卡塔尔', 'Cameroon': '喀麦隆', 'Sweden': '瑞典' };
 const teamNameMapForOdds = { '巴西': 'Brazil', '阿根廷': 'Argentina', '法国': 'France', '英格兰': 'England', '德国': 'Germany', '西班牙': 'Spain', '葡萄牙': 'Portugal', '荷兰': 'Netherlands', '意大利': 'Italy', '比利时': 'Belgium', '墨西哥': 'Mexico', '乌拉圭': 'Uruguay', '克罗地亚': 'Croatia', '丹麦': 'Denmark', '瑞士': 'Switzerland', '美国': 'USA', '塞内加尔': 'Senegal', '日本': 'Japan', '韩国': 'South Korea', '澳大利亚': 'Australia', '厄瓜多尔': 'Ecuador', '加纳': 'Ghana', '摩洛哥': 'Morocco', '尼日利亚': 'Nigeria', '塞尔维亚': 'Serbia', '波兰': 'Poland', '乌克兰': 'Ukraine', '奥地利': 'Austria', '威尔士': 'Wales', '苏格兰': 'Scotland', '捷克': 'Czech Republic', '南非': 'South Africa', '加拿大': 'Canada', '新西兰': 'New Zealand', '哥斯达黎加': 'Costa Rica', '巴拿马': 'Panama', '沙特': 'Saudi Arabia', '伊朗': 'Iran', '卡塔尔': 'Qatar', '喀麦隆': 'Cameroon', '瑞典': 'Sweden' };
 const eloMap = { '巴西': 2100, '阿根廷': 2080, '法国': 2050, '英格兰': 2030, '德国': 2000, '西班牙': 1980, '葡萄牙': 1960, '荷兰': 1940, '意大利': 1920, '比利时': 1900, '墨西哥': 1880, '乌拉圭': 1860, '克罗地亚': 1840, '丹麦': 1820, '瑞士': 1800, '美国': 1780, '塞内加尔': 1760, '日本': 1740, '韩国': 1720, '澳大利亚': 1700, '厄瓜多尔': 1680, '加纳': 1660, '摩洛哥': 1640, '尼日利亚': 1620, '塞尔维亚': 1600, '波兰': 1580, '乌克兰': 1560, '奥地利': 1540, '威尔士': 1520, '苏格兰': 1500, '捷克': 1480, '南非': 1460, '加拿大': 1440, '新西兰': 1420, '哥斯达黎加': 1400, '巴拿马': 1380, '沙特': 1360, '伊朗': 1340, '卡塔尔': 1320, '喀麦隆': 1300, '瑞典': 1280 };
@@ -57,39 +58,33 @@ async function getMatchNewsAndInjury(home, away) {
     let isCriticalInjury = false;
     let injuryKey = '';
     let news = '';
-    const searchUrls = [
-        `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away + ' 伤停 首发')}`,
-        `https://sports.sina.com.cn/`
-    ];
-    for (const url of searchUrls) {
-        try {
-            const response = await axios.get(url, { headers: { 'User-Agent': getRandomUserAgent() }, timeout: 5000 });
-            const $ = cheerio.load(response.data);
-            $('.news-item').each((i, elem) => {
-                if (i < 3) {
-                    const title = $(elem).find('.title').text().trim();
-                    if (title.includes(home) || title.includes(away)) {
-                        news += title + '；';
-                        const injuryKeywords = ['缺席', '受伤', '缺阵', '红牌', '停赛', '伤停', '替补'];
-                        for (const word of injuryKeywords) {
-                            if (title.includes(word)) { isCriticalInjury = true; injuryKey = word; break; }
-                        }
+    try {
+        const searchUrl = `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away + ' 伤停 首发')}`;
+        const response = await axios.get(searchUrl, { headers: { 'User-Agent': getRandomUserAgent() }, timeout: 5000 });
+        const $ = cheerio.load(response.data);
+        $('.news-item').each((i, elem) => {
+            if (i < 3) {
+                const title = $(elem).find('.title').text().trim();
+                if (title.includes(home) || title.includes(away)) {
+                    news += title + '；';
+                    const injuryKeywords = ['缺席', '受伤', '缺阵', '红牌', '停赛', '伤停', '替补'];
+                    for (const word of injuryKeywords) {
+                        if (title.includes(word)) { isCriticalInjury = true; injuryKey = word; break; }
                     }
                 }
-            });
-            if (news) break;
-        } catch (err) {}
-    }
-    if (!news) {
+            }
+        });
+        if (!news) {
+            const eloH = getElo(home); const eloA = getElo(away);
+            news = `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+        }
+        return { text: news, isCriticalInjury, injuryKey };
+    } catch (err) {
         const eloH = getElo(home); const eloA = getElo(away);
-        news = `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+        return { text: `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`, isCriticalInjury: false, injuryKey: '' };
     }
-    return { text: news, isCriticalInjury, injuryKey };
 }
 
-// ==========================================
-// 真实数据泊松分布
-// ==========================================
 async function getTeamRecentForm(teamName) {
     if (formCache.has(teamName)) return formCache.get(teamName);
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -135,9 +130,6 @@ async function calculatePoissonProbabilities(home, away) {
     };
 }
 
-// ==========================================
-// 6大玩法的精准赔率映射
-// ==========================================
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
     if (!API_KEY) return null;
@@ -617,7 +609,7 @@ app.get('/api/state', (req, res) => {
     res.json(state);
 });
 
-// 🟢【重点修复】：将5大玩法全部返回给前端
+// 🟢【修复】：将5大玩法全部返回给前端
 app.get('/api/review', (req, res) => {
     const logs = [];
     const keys = Array.from(optimalCache.keys());
@@ -629,21 +621,18 @@ app.get('/api/review', (req, res) => {
             const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
             const totalActual = h + a;
             
-            // 准备5个维度的推演结果与命中状态
             const result = {
                 match: `${data.home || '未知'} vs ${data.away || '未知'}`,
                 actualScore: data.actualScore,
-                // 预测内容
                 predWDL: predObj.win_draw_lose ? predObj.win_draw_lose.prediction : '-',
                 predHandicap: predObj.handicap ? predObj.handicap.prediction : '-',
                 predTG: predObj.total_goals ? predObj.total_goals.prediction : '-',
                 predHF: predObj.half_full ? predObj.half_full.prediction : '-',
                 predCS: predObj.correct_score ? predObj.correct_score.prediction : '-',
-                // 命中状态（用于前端打钩打叉）
                 isHitWDL: predObj.win_draw_lose && predObj.win_draw_lose.prediction === actualSPF,
                 isHitHandicap: predObj.handicap && predObj.handicap.prediction === actualSPF,
                 isHitTG: predObj.total_goals && parseInt(predObj.total_goals.prediction) === totalActual,
-                isHitHF: predObj.half_full && predObj.half_full.prediction === actualSPF, // 简化的半全场判读，等同于结论
+                isHitHF: predObj.half_full && predObj.half_full.prediction === actualSPF,
                 isHitCS: predObj.correct_score && predObj.correct_score.prediction === data.actualScore
             };
             logs.push(result);
