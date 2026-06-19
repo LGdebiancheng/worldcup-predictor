@@ -40,6 +40,7 @@ const eloMap = { '巴西': 2100, '阿根廷': 2080, '法国': 2050, '英格兰':
 const DEFAULT_ELO = 1500;
 function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 
+// 🟢 兜底赛程
 const fallbackData = { 
     finished: [], 
     upcoming: [
@@ -54,8 +55,7 @@ function getRandomUserAgent() {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
     ];
     return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
@@ -94,6 +94,9 @@ async function getMatchNewsAndInjury(home, away) {
     }
 }
 
+// ==========================================
+// 真实数据泊松分布
+// ==========================================
 async function getTeamRecentForm(teamName) {
     if (formCache.has(teamName)) return formCache.get(teamName);
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -140,7 +143,7 @@ async function calculatePoissonProbabilities(home, away) {
 }
 
 // ==========================================
-// 🟢【核心修复】：双API精准互补 + 映射补全机制
+// 🟢【终极修复】：彻底解耦并行抓取 + 防伪空数据机制
 // ==========================================
 async function fetchRealOddsFromAPIFootball(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -234,7 +237,7 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
         
         const bookmaker = matchData.bookmakers && matchData.bookmakers.length > 0 ? matchData.bookmakers[0] : null;
         if (!bookmaker) {
-            console.warn(`⚠️ The Odds API 未获取到 ${home} vs ${away} 的实时盘口，降级至系统模拟赔率`);
+            console.warn(`⚠️ The Odds API 未获取到 ${home} vs ${away} 的实时盘口数据`);
             return null;
         }
 
@@ -256,14 +259,18 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
             } else if (market.key === 'half_full') {
                 for (const outcome of market.outcomes) {
                     halfFullMap[outcome.name] = outcome.price;
-                    if (outcome.name === 'Home/Home') hf_odds = outcome.price;
                 }
             } else if (market.key === 'correct_score') {
                 for (const outcome of market.outcomes) {
                     correctScoreMap[outcome.name] = outcome.price;
-                    if (outcome.name === '2:1') cs_odds = outcome.price;
                 }
             }
+        }
+
+        // 🟢【新增】：如果返回的数据集中找不到半全场或比分的映射，说明该比赛没开盘口，直接返回 null 走系统模拟
+        if (Object.keys(halfFullMap).length === 0 && Object.keys(correctScoreMap).length === 0) {
+            console.warn(`⚠️ The Odds API 无真实盘口数据，降级使用 ELO 模拟赔率`);
+            return null;
         }
 
         const odds = { 
@@ -281,61 +288,34 @@ async function fetchRealOddsFromTheOddsAPI(home, away) {
     }
 }
 
-// 🟢【核心修复入口】：必须强制执行映射补全
 async function fetchRealOdds(home, away) {
-    // 1. 首先尝试 API-Football
     let apiFootballOdds = await fetchRealOddsFromAPIFootball(home, away);
     
-    // 2. 检查 API-Football 是否真的给出了具体的半全场和比分赔率
-    let isHalfFullReal = false;
-    let isCorrectScoreReal = false;
-    if (apiFootballOdds && apiFootballOdds.halfFullMap && Object.keys(apiFootballOdds.halfFullMap).length > 0) {
-        isHalfFullReal = true;
-    }
-    if (apiFootballOdds && apiFootballOdds.correctScoreMap && Object.keys(apiFootballOdds.correctScoreMap).length > 0) {
-        isCorrectScoreReal = true;
-    }
-
-    // 3. 如果 API-Football 提供了基础赔率，但缺少半全场或比分，则强制用 The Odds API 补全
-    if (apiFootballOdds && (!isHalfFullReal || !isCorrectScoreReal)) {
-        console.log(`⚠️ [强制补丁] 尝试使用 The Odds API 补充半全场/比分: ${home} vs ${away}`);
-        const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
-        if (theOddsAPIOdds) {
-            // 合并映射
-            if (theOddsAPIOdds.halfFullMap) {
-                apiFootballOdds.halfFullMap = theOddsAPIOdds.halfFullMap;
-                if (theOddsAPIOdds.halfFullMap['Home/Home']) {
-                    apiFootballOdds.hf_odds = theOddsAPIOdds.halfFullMap['Home/Home'].toFixed(2);
-                } else {
-                    // 如果不存在 Home/Home，取第一个有效赔率
-                    const firstKey = Object.keys(theOddsAPIOdds.halfFullMap)[0];
-                    if (firstKey) apiFootballOdds.hf_odds = theOddsAPIOdds.halfFullMap[firstKey].toFixed(2);
+    // 如果主接口拿到了数据，但缺失半全场/比分映射，尝试使用备用接口补全
+    if (apiFootballOdds) {
+        const hasHF = apiFootballOdds.halfFullMap && Object.keys(apiFootballOdds.halfFullMap).length > 0;
+        const hasCS = apiFootballOdds.correctScoreMap && Object.keys(apiFootballOdds.correctScoreMap).length > 0;
+        if (!hasHF || !hasCS) {
+            const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
+            if (theOddsAPIOdds) {
+                if (theOddsAPIOdds.halfFullMap) {
+                    apiFootballOdds.halfFullMap = theOddsAPIOdds.halfFullMap;
+                    if (theOddsAPIOdds.halfFullMap['Home/Home']) {
+                        apiFootballOdds.hf_odds = theOddsAPIOdds.halfFullMap['Home/Home'].toFixed(2);
+                    }
                 }
-            }
-            if (theOddsAPIOdds.correctScoreMap) {
-                apiFootballOdds.correctScoreMap = theOddsAPIOdds.correctScoreMap;
-                if (theOddsAPIOdds.correctScoreMap['2:1']) {
-                    apiFootballOdds.cs_odds = theOddsAPIOdds.correctScoreMap['2:1'].toFixed(2);
-                } else {
-                    // 如果不存在 2:1，取第一个有效比分赔率
-                    const firstKey = Object.keys(theOddsAPIOdds.correctScoreMap)[0];
-                    if (firstKey) apiFootballOdds.cs_odds = theOddsAPIOdds.correctScoreMap[firstKey].toFixed(2);
+                if (theOddsAPIOdds.correctScoreMap) {
+                    apiFootballOdds.correctScoreMap = theOddsAPIOdds.correctScoreMap;
+                    if (theOddsAPIOdds.correctScoreMap['2:1']) {
+                        apiFootballOdds.cs_odds = theOddsAPIOdds.correctScoreMap['2:1'].toFixed(2);
+                    }
                 }
+                return apiFootballOdds;
             }
-            apiFootballOdds.from_real = true;
-            console.log(`✅ [补丁成功] ${home} vs ${away} 的半全场/比分赔率已通过 The Odds API 补全`);
-            return apiFootballOdds;
-        } else {
-            console.warn(`⚠️ [补丁失败] ${home} vs ${away} 沿用默认(降级至系统ELO模拟)`);
-            apiFootballOdds.from_real = false;
-            return apiFootballOdds;
         }
+        return apiFootballOdds;
     }
 
-    // 4. 如果 API-Football 完美返回全部数据
-    if (apiFootballOdds) return apiFootballOdds;
-
-    // 5. 如果 API-Football 完全失败，直接走 The Odds API
     const theOddsAPIOdds = await fetchRealOddsFromTheOddsAPI(home, away);
     if (theOddsAPIOdds) return theOddsAPIOdds;
 
@@ -363,6 +343,7 @@ async function getOdds(home, away, isFinished = false) {
         return realOdds;
     }
 
+    // 🟢 真正的 ELO 计算模拟
     const eloH = getElo(home); const eloA = getElo(away);
     const diff = eloH - eloA;
     const pWin = 1 / (1 + Math.exp(-diff/200));
@@ -373,7 +354,8 @@ async function getOdds(home, away, isFinished = false) {
     const odds = {
         win: (1 / (pWin / total)).toFixed(2), draw: (1 / (pDraw / total)).toFixed(2), lose: (1 / (pLose / total)).toFixed(2),
         h_odds: (1 / (pWin / total) * 0.95).toFixed(2), d_odds: (1 / (pDraw / total) * 0.95).toFixed(2), a_odds: (1 / (pLose / total) * 0.95).toFixed(2),
-        total_odds: (1.9).toFixed(2), hf_odds: '3.0', cs_odds: '6.0', halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {}, handicap: '0', from_real: false, flash_warning: false
+        total_odds: (1.9).toFixed(2), hf_odds: (1 / (pWin / total) * 0.95).toFixed(2), cs_odds: (1 / (pWin / total) * 0.95).toFixed(2), 
+        halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {}, handicap: '0', from_real: false, flash_warning: false
     };
     oddsCache.set(key, { odds, timestamp: now });
     return odds;
@@ -653,8 +635,16 @@ async function runUpcomingSimulation() {
     const historicalBestMethod = global.bestMethod || '半全场'; 
     const upcomingLimit = 4;
     const upcomingSlice = upcoming.slice(0, upcomingLimit);
-    const externalData = await fetchExternalPredictions();
-    if (externalData) { global.externalPredictions = externalData; }
+
+    // 🟢【核心修复】：将外部网站抓取改为非阻塞。
+    let externalData = null;
+    try {
+        externalData = await fetchExternalPredictions();
+        if (externalData) global.externalPredictions = externalData;
+    } catch (e) {
+        console.warn("外部数据抓取非阻塞失败，不影响主推演");
+    }
+
     const matchPromises = upcomingSlice.map(async (match) => {
         const home = match.home; const away = match.away; const key = `${home}_${away}`;
         try {
