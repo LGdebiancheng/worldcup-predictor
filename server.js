@@ -21,13 +21,19 @@ let betSummary = { totalProfit: 0, methodProfits: {}, dailyProfits: {}, betRecor
 let lastMatchData = {};
 let previousOddsRecord = {}; 
 
+// 🟢 存储外部网站抓取的数据
+let externalPredictions = [];
+
+// 复盘日记本
+let matchDiary = [];
+
 // 历史盈利率(ROI)
 let historicalMethodSuccess = {
     '胜平负': { hits: 0, total: 0, profit: 0, totalStake: 0 },
-    '半全场': { hits: 0, total: 0, profit: 0, totalStake: 0 },
-    '正确比分': { hits: 0, total: 0, profit: 0, totalStake: 0 },
     '让球胜平负': { hits: 0, total: 0, profit: 0, totalStake: 0 },
-    '总进球数': { hits: 0, total: 0, profit: 0, totalStake: 0 }
+    '总进球数': { hits: 0, total: 0, profit: 0, totalStake: 0 },
+    '半全场': { hits: 0, total: 0, profit: 0, totalStake: 0 },
+    '正确比分': { hits: 0, total: 0, profit: 0, totalStake: 0 }
 };
 
 // ---------- 数据映射 ----------
@@ -40,37 +46,54 @@ function getElo(team) { return eloMap[team] || DEFAULT_ELO; }
 const fallbackData = { finished: [], upcoming: [] };
 
 // ==========================================
-// 优化 1 & 6：赛前情报 + 历史上半场 + 世界杯背景
+// 🟢【优化点1 & 3】：加入随机 UA 池，防抓取
 // ==========================================
-async function getMatchNews(home, away) {
+function getRandomUserAgent() {
+    const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+    ];
+    return userAgents[Math.floor(Math.random() * userAgents.length)];
+}
+
+// ==========================================
+// 赛前情报与自动拦截
+// ==========================================
+async function getMatchNewsAndInjury(home, away) {
+    let isCriticalInjury = false;
+    let injuryKey = '';
+    let news = '';
     try {
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
-        const searchUrl = `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away)}`;
-        const response = await axios.get(searchUrl, { headers: { 'User-Agent': userAgent }, timeout: 5000 });
+        const searchUrl = `https://www.dongqiudi.com/search?keyword=${encodeURIComponent(home + ' ' + away + ' 伤停 首发')}`;
+        const response = await axios.get(searchUrl, { headers: { 'User-Agent': getRandomUserAgent() }, timeout: 5000 });
         const $ = cheerio.load(response.data);
-        let news = '';
         $('.news-item').each((i, elem) => {
-            if (i < 2) {
+            if (i < 3) {
                 const title = $(elem).find('.title').text().trim();
                 if (title.includes(home) || title.includes(away)) {
-                    news += title + '。';
+                    news += title + '；';
+                    const injuryKeywords = ['缺席', '受伤', '缺阵', '红牌', '停赛', '伤停', '替补'];
+                    for (const word of injuryKeywords) {
+                        if (title.includes(word)) { isCriticalInjury = true; injuryKey = word; break; }
+                    }
                 }
             }
         });
-        
-        const eloH = getElo(home); const eloA = getElo(away);
-        const halfStats = `上半场评估：主队 ${home} 抢开局能力评分 ${eloH/100}，客队 ${away} 抢开局能力评分 ${eloA/100}。`;
-        const weather = `赛前气象：天气晴朗，适合发挥。`;
-        
-        return `【世界杯小组赛前瞻】${news}${halfStats}${weather}。关注半全场玩法。`;
+        if (!news) {
+            const eloH = getElo(home); const eloA = getElo(away);
+            news = `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+        }
+        return { text: news, isCriticalInjury, injuryKey };
     } catch (err) {
         const eloH = getElo(home); const eloA = getElo(away);
-        return `【世界杯小组赛】主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`;
+        return { text: `主队 ${home} 实力评分 ${eloH}，客队 ${away} 实力评分 ${eloA}。`, isCriticalInjury: false, injuryKey: '' };
     }
 }
 
 // ==========================================
-// 优化 2：真实数据泊松分布
+// 真实数据泊松分布
 // ==========================================
 async function getTeamRecentForm(teamName) {
     if (formCache.has(teamName)) return formCache.get(teamName);
@@ -92,11 +115,8 @@ async function getTeamRecentForm(teamName) {
         for (const m of matches) {
             const homeTeam = nameMap[m.homeTeam?.name] || m.homeTeam?.name || '';
             const awayTeam = nameMap[m.awayTeam?.name] || m.awayTeam?.name || '';
-            if (homeTeam === teamName && m.score.fullTime.home !== null) {
-                totalGoals += m.score.fullTime.home; count++;
-            } else if (awayTeam === teamName && m.score.fullTime.away !== null) {
-                totalGoals += m.score.fullTime.away; count++;
-            }
+            if (homeTeam === teamName && m.score.fullTime.home !== null) { totalGoals += m.score.fullTime.home; count++; }
+            else if (awayTeam === teamName && m.score.fullTime.away !== null) { totalGoals += m.score.fullTime.away; count++; }
         }
         const avgGoals = count > 0 ? (totalGoals / count) : 1.0;
         formCache.set(teamName, avgGoals);
@@ -121,7 +141,7 @@ async function calculatePoissonProbabilities(home, away) {
 }
 
 // ==========================================
-// 优化 3：动态赔率 + 异动监测
+// 6大玩法的精准赔率映射
 // ==========================================
 async function fetchRealOdds(home, away) {
     const API_KEY = process.env.FOOTBALL_API_KEY;
@@ -150,8 +170,13 @@ async function fetchRealOdds(home, away) {
         if (!oddsData.response || oddsData.response.length === 0) return null;
         const bookmaker = oddsData.response[0].bookmakers[0];
         if (!bookmaker) return null;
+        
         let win = 2.0, draw = 3.0, lose = 2.5, h_odds = 1.9, d_odds = 3.2, a_odds = 2.0, total_odds = 1.9;
         let hf_odds = 3.0, cs_odds = 6.0;
+        let halfFullMap = {};
+        let correctScoreMap = {};
+        let totalGoalsMap = {};
+        
         for (const bet of bookmaker.bets) {
             if (bet.id === 1) {
                 for (const value of bet.values) {
@@ -167,20 +192,19 @@ async function fetchRealOdds(home, away) {
                 }
             } else if (bet.id === 3) {
                 for (const value of bet.values) {
-                    total_odds = parseFloat(value.odd);
+                    totalGoalsMap[value.value] = parseFloat(value.odd);
                 }
             } else if (bet.id === 5) { 
                 for (const value of bet.values) {
-                    hf_odds = parseFloat(value.odd) || hf_odds;
-                    break;
+                    halfFullMap[value.value] = parseFloat(value.odd);
                 }
             } else if (bet.id === 6) { 
                 for (const value of bet.values) {
-                    if (value.value === '2:1') { cs_odds = parseFloat(value.odd); break; }
+                    correctScoreMap[value.value] = parseFloat(value.odd);
                 }
             }
         }
-        return { win: win.toFixed(2), draw: draw.toFixed(2), lose: lose.toFixed(2), h_odds: h_odds.toFixed(2), d_odds: d_odds.toFixed(2), a_odds: a_odds.toFixed(2), total_odds: total_odds.toFixed(2), hf_odds: hf_odds.toFixed(2), cs_odds: cs_odds.toFixed(2), handicap: '0', from_real: true };
+        return { win: win.toFixed(2), draw: draw.toFixed(2), lose: lose.toFixed(2), h_odds: h_odds.toFixed(2), d_odds: d_odds.toFixed(2), a_odds: a_odds.toFixed(2), total_odds: total_odds.toFixed(2), hf_odds: hf_odds.toFixed(2), cs_odds: cs_odds.toFixed(2), halfFullMap, correctScoreMap, totalGoalsMap, handicap: '0', from_real: true };
     } catch (error) { return null; }
 }
 
@@ -197,10 +221,7 @@ async function getOdds(home, away, isFinished = false) {
         const oldOdds = global.previousOddsRecord[key];
         if (oldOdds && oldOdds.hf_odds && realOdds.hf_odds) {
             const dropRatio = (parseFloat(oldOdds.hf_odds) - parseFloat(realOdds.hf_odds)) / parseFloat(oldOdds.hf_odds);
-            if (dropRatio > 0.20) {
-                flash_warning = true;
-                console.log(`⚠️ [赔率异动] ${home} vs ${away} 半全场赔率骤降 ${(dropRatio*100).toFixed(1)}%，注意机构资金注入！`);
-            }
+            if (dropRatio > 0.20) flash_warning = true;
         }
         realOdds.flash_warning = flash_warning;
         global.previousOddsRecord[key] = realOdds;
@@ -218,17 +239,19 @@ async function getOdds(home, away, isFinished = false) {
     const odds = {
         win: (1 / (pWin / total)).toFixed(2), draw: (1 / (pDraw / total)).toFixed(2), lose: (1 / (pLose / total)).toFixed(2),
         h_odds: (1 / (pWin / total) * 0.95).toFixed(2), d_odds: (1 / (pDraw / total) * 0.95).toFixed(2), a_odds: (1 / (pLose / total) * 0.95).toFixed(2),
-        total_odds: (1.9).toFixed(2), hf_odds: '3.0', cs_odds: '6.0', handicap: '0', from_real: false, flash_warning: false
+        total_odds: (1.9).toFixed(2), hf_odds: '3.0', cs_odds: '6.0', halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {}, handicap: '0', from_real: false, flash_warning: false
     };
     oddsCache.set(key, { odds, timestamp: now });
     return odds;
 }
 
 // ---------- DeepSeek 调用 ----------
-async function callDeepSeek(home, away, context) {
+async function callDeepSeek(home, away, context, externalSignal) {
     const API_KEY = process.env.DEEPSEEK_API_KEY;
     if (!API_KEY) throw new Error('未设置 DEEPSEEK_API_KEY 环境变量');
-    const prompt = `你是顶级的足球预测专家。现在进行的是世界杯小组赛。赛前最新情报：${context}。请针对 ${home} vs ${away} 的比赛进行深度分析。
+    
+    const externalContext = externalSignal ? `【外部AI平台交叉验证】${externalSignal}` : '';
+    const prompt = `你是顶级的足球预测专家。现在进行的是世界杯小组赛。赛前最新情报：${context}。${externalContext}。请针对 ${home} vs ${away} 的比赛进行深度分析。
 **核心战术背景：** 世界杯小组赛为了争净胜球，强队大概率会抢开局；同时第一场容易慢热。
 **分析重点：** 深度剖析双方上半场开局的战意及全场走势。
 **最关注的玩法是：** ① 半全场； ② 正确比分。
@@ -247,7 +270,10 @@ async function callDeepSeek(home, away, context) {
     });
     if (!response.ok) { const err = await response.text(); throw new Error(`DeepSeek API 错误 (${response.status}): ${err}`); }
     const data = await response.json();
-    return JSON.parse(data.choices[0].message.content);
+    
+    let content = data.choices[0].message.content;
+    content = content.replace(/^```json\s?/i, '').replace(/```\s?$/i, '');
+    return JSON.parse(content);
 }
 
 async function fetchMatchesFromAPI() {
@@ -280,8 +306,8 @@ async function runFinishedSimulation() {
         for (let i = 0; i < times; i++) {
             totalAttempts++;
             try {
-                const context = await getMatchNews(home, away);
-                const pred = await callDeepSeek(home, away, context);
+                const { text: context } = await getMatchNewsAndInjury(home, away);
+                const pred = await callDeepSeek(home, away, context, null);
                 const [h, a] = actualScore.split(':').map(Number);
                 const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
                 let score = 0;
@@ -296,8 +322,8 @@ async function runFinishedSimulation() {
         if (bestPred) {
             const odds = await getOdds(home, away, true);
             const isUpsetFlag = isUpsetWithOdds(home, away, actualScore, odds);
-            const weight = isUpsetFlag ? 1.5 : 1.0; // 🟢【改成了1.5】
-            optimalCache.set(matchId, { pred: bestPred, score: bestScore, odds: odds, weight: weight, actualScore: actualScore });
+            const weight = isUpsetFlag ? 1.5 : 1.0;
+            optimalCache.set(matchId, { pred: bestPred, score: bestScore, odds: odds, weight: weight, actualScore: actualScore, home, away });
         }
     }
     updateStatistics(finished);
@@ -317,7 +343,71 @@ function isUpsetWithOdds(home, away, actualScore, odds) {
 }
 
 // ==========================================
-// 优化 4：凯利公式逻辑，分离出独立组合计算
+// 🟢【优化点 1 & 2】：外部数据抓取，防反爬，硬核文字匹配
+// ==========================================
+// 辅助函数：去除所有空格、破折号和大小写，只留核心汉字和字母，用于强匹配
+function normalizeString(str) {
+    return str.replace(/[^a-zA-Z\u4e00-\u9fa5]/g, '').toLowerCase();
+}
+
+async function fetchExternalPredictions() {
+    const targetUrl = 'https://worldcup.lyihub.com/index.html';
+    try {
+        const response = await axios.get(targetUrl, { 
+            headers: { 'User-Agent': getRandomUserAgent() }, 
+            timeout: 8000 
+        });
+        const $ = cheerio.load(response.data);
+        
+        let predictions = [];
+        let aiNames = [];
+        
+        // 循环遍历所有 table，尝试获取数据
+        $('table').each((index, table) => {
+            const rows = $(table).find('tr');
+            if (rows.length > 2) {
+                const headerCells = rows.eq(0).find('th, td');
+                if (headerCells.length > 0) {
+                    headerCells.each((i, cell) => {
+                        if (i === 0) aiNames.push('比赛');
+                        else aiNames.push($(cell).text().trim() || `AI-${i}`);
+                    });
+                }
+                rows.each((rowIndex, row) => {
+                    if (rowIndex === 0) return;
+                    const cells = $(row).find('td');
+                    if (cells.length >= 2) {
+                        const matchName = cells.eq(0).text().trim();
+                        const matchData = [];
+                        for (let i = 1; i < cells.length; i++) {
+                            matchData.push(cells.eq(i).text().trim().replace(/\s+/g, ' '));
+                        }
+                        if (matchName && matchData.length > 0) {
+                            predictions.push({
+                                match: matchName,
+                                aiData: matchData
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+        if (predictions.length > 0) {
+            return {
+                aiNames: aiNames,
+                predictions: predictions
+            };
+        }
+        return null;
+    } catch (error) {
+        console.warn(`⚠️ 外部站点抓取失败: ${error.message}`);
+        return null;
+    }
+}
+
+// ==========================================
+// 凯利公式逻辑
 // ==========================================
 function calculateKellyForMatches(matches, mode, budget = 100) {
     const getConf = (key) => {
@@ -329,22 +419,44 @@ function calculateKellyForMatches(matches, mode, budget = 100) {
         const method = overrideMethod || match.finalPrediction.method;
         const odds = match.odds;
         let prediction = match.finalPrediction.prediction;
-        // 如果强制模式不同，需要从 cache 里取 best pred
+        
         if (overrideMethod && overrideMethod !== match.finalPrediction.method) {
             const cached = upcomingCache.get(match.matchKey);
             if (cached && cached.best) {
                 if (overrideMethod === '半全场') prediction = cached.best.pred.half_full.prediction;
                 else if (overrideMethod === '正确比分') prediction = cached.best.pred.correct_score.prediction;
                 else if (overrideMethod === '胜平负') prediction = cached.best.pred.win_draw_lose.prediction;
+                else if (overrideMethod === '让球胜平负') prediction = cached.best.pred.handicap.prediction;
+                else if (overrideMethod === '总进球数') prediction = cached.best.pred.total_goals.prediction;
             }
         }
 
-        if (method === '半全场') return { odd: parseFloat(odds.hf_odds) || 3.0, pred: prediction };
-        if (method === '正确比分') return { odd: parseFloat(odds.cs_odds) || 6.0, pred: prediction };
+        if (method === '半全场') {
+            const chinese2api = { '胜胜': 'Home/Home', '平胜': 'Draw/Home', '负胜': 'Away/Home', '胜平': 'Home/Draw', '平平': 'Draw/Draw', '负平': 'Away/Draw', '胜负': 'Home/Away', '平负': 'Draw/Away', '负负': 'Away/Away' };
+            const apiKey = chinese2api[prediction];
+            const odd = odds.halfFullMap && odds.halfFullMap[apiKey] ? odds.halfFullMap[apiKey] : (parseFloat(odds.hf_odds) || 3.0);
+            return { odd, pred: prediction };
+        }
+        if (method === '正确比分') {
+            const odd = odds.correctScoreMap && odds.correctScoreMap[prediction] ? odds.correctScoreMap[prediction] : (parseFloat(odds.cs_odds) || 6.0);
+            return { odd, pred: prediction };
+        }
         if (method === '胜平负') {
             if (prediction.includes('主队胜')) return { odd: parseFloat(odds.win) || 2.0, pred: prediction };
             if (prediction.includes('客队胜')) return { odd: parseFloat(odds.lose) || 2.5, pred: prediction };
             return { odd: parseFloat(odds.draw) || 3.0, pred: prediction };
+        }
+        if (method === '让球胜平负') {
+            if (prediction.includes('主队赢盘')) return { odd: parseFloat(odds.h_odds) || 1.9, pred: prediction };
+            if (prediction.includes('客队赢盘')) return { odd: parseFloat(odds.a_odds) || 2.0, pred: prediction };
+            return { odd: parseFloat(odds.d_odds) || 3.2, pred: prediction };
+        }
+        if (method === '总进球数') {
+            let odd = 1.9;
+            if (odds.totalGoalsMap && odds.totalGoalsMap[prediction]) {
+                odd = odds.totalGoalsMap[prediction];
+            }
+            return { odd, pred: prediction };
         }
         return { odd: 2.0, pred: prediction };
     };
@@ -366,7 +478,6 @@ function calculateKellyForMatches(matches, mode, budget = 100) {
         totalKellyAmount += amount;
     };
 
-    // 只有凑齐4场才演算组合
     if (matches.length === 4) {
         const [A, B, C, D] = matches;
         const pA = getConf(A.matchKey);
@@ -411,7 +522,7 @@ function calculateKellyForMatches(matches, mode, budget = 100) {
 
 // ---------- 更新统计 ----------
 function updateStatistics(finishedMatches) {
-    const methods = ['胜平负', '半全场', '正确比分'];
+    const methods = ['胜平负', '让球胜平负', '总进球数', '半全场', '正确比分'];
     const stats = {};
     methods.forEach(m => stats[m] = { correct: 0, total: 0, profit: 0, stake: 0 });
     let bestMethod = '胜平负'; let bestRate = 0;
@@ -423,18 +534,21 @@ function updateStatistics(finishedMatches) {
         const cached = optimalCache.get(matchId);
         const pred = cached.pred;
         const odds = cached.odds;
-        const weight = cached.weight || 1.0; // 🟢 调用权重
+        const weight = cached.weight || 1.0;
         const [h, a] = actualScore.split(':').map(Number);
         const actualSPF = h > a ? '主队胜' : (h < a ? '客队胜' : '平局');
+        const totalActual = h + a;
 
         const methodsToCheck = {
             '胜平负': { correct: pred.win_draw_lose.prediction === actualSPF, odds: parseFloat(odds.win) || 2.0 },
+            '让球胜平负': { correct: pred.handicap.prediction === actualSPF, odds: parseFloat(odds.h_odds) || 1.9 },
+            '总进球数': { correct: parseInt(pred.total_goals.prediction) === totalActual, odds: (odds.totalGoalsMap && odds.totalGoalsMap[pred.total_goals.prediction]) || 1.9 },
             '半全场': { correct: pred.half_full.prediction === actualSPF, odds: parseFloat(odds.hf_odds) || 3.0 },
             '正确比分': { correct: pred.correct_score.prediction === actualScore, odds: parseFloat(odds.cs_odds) || 6.0 }
         };
         
         for (const [method, data] of Object.entries(methodsToCheck)) {
-            stats[method].total += weight; // 🟢 权重作用到统计里
+            stats[method].total += weight;
             const stake = 1;
             if (data.correct) {
                 stats[method].correct += weight;
@@ -473,17 +587,50 @@ async function runUpcomingSimulation() {
     const upcomingSlice = upcoming.slice(0, upcomingLimit);
     const matchPredictions = [];
 
+    const externalData = await fetchExternalPredictions();
+    if (externalData) {
+        global.externalPredictions = externalData;
+    }
+
     for (const match of upcomingSlice) {
         const home = match.home; const away = match.away;
         const key = `${home}_${away}`;
         try {
-            const context = await getMatchNews(home, away);
-            const predDeepSeek = await callDeepSeek(home, away, context);
+            const { text: context, isCriticalInjury, injuryKey } = await getMatchNewsAndInjury(home, away);
+            
+            let externalSignal = null;
+            // 🟢【优化 2】：去除所有符号的硬核文本匹配
+            if (externalData && externalData.predictions) {
+                // 构造一个标准化字符串，比如 "巴西vs阿根廷"
+                const matchNorm = normalizeString(`${home}vs${away}`);
+                for (const ext of externalData.predictions) {
+                    // 外部网站的文本也做一次标准化清洗
+                    const extMatchNorm = normalizeString(ext.match);
+                    if (extMatchNorm.includes(matchNorm) || matchNorm.includes(extMatchNorm)) {
+                        externalSignal = ext.aiData.join('，');
+                        break;
+                    }
+                }
+            }
+
+            const predDeepSeek = await callDeepSeek(home, away, context, externalSignal);
             const mathResult = await calculatePoissonProbabilities(home, away);
 
             let finalPredJson = predDeepSeek;
             let confidenceMultiplier = 1.0;
             if (mathResult.mathConfidence > 0.7) confidenceMultiplier = 1.2;
+
+            if (externalSignal) {
+                if (predDeepSeek.half_full && predDeepSeek.half_full.prediction === '胜胜' && externalSignal.includes('主队胜')) {
+                    confidenceMultiplier *= 1.1;
+                }
+            }
+
+            if (isCriticalInjury) {
+                if (finalPredJson.half_full && finalPredJson.half_full.prediction === '胜胜') {
+                    confidenceMultiplier *= 0.5; 
+                }
+            }
 
             let cacheEntry = upcomingCache.get(key) || { latest: null, best: null };
             cacheEntry.latest = { pred: finalPredJson, timestamp: new Date() };
@@ -505,6 +652,10 @@ async function runUpcomingSimulation() {
                     finalPred = { method: '半全场', prediction: bestPred.half_full.prediction, analysis: bestPred.half_full.analysis };
                 } else if (targetMethod === '正确比分') {
                     finalPred = { method: '正确比分', prediction: bestPred.correct_score.prediction, analysis: bestPred.correct_score.analysis };
+                } else if (targetMethod === '让球胜平负') {
+                    finalPred = { method: '让球胜平负', prediction: bestPred.handicap.prediction, analysis: bestPred.handicap.analysis };
+                } else if (targetMethod === '总进球数') {
+                    finalPred = { method: '总进球数', prediction: bestPred.total_goals.prediction, analysis: bestPred.total_goals.analysis };
                 } else {
                     finalPred = { method: targetMethod, prediction: bestPred.win_draw_lose.prediction };
                 }
@@ -512,21 +663,28 @@ async function runUpcomingSimulation() {
                 finalPred = { method: '胜平负', prediction: '平局', analysis: 'AI调用失败，系统启用平局兜底' };
             }
 
-            cacheEntry.finalMethod = finalPred;
+            const autoWarnings = [];
+            if (isCriticalInjury) autoWarnings.push(`赛前自动检测到[${injuryKey}]状况，已自动调低该场胜胜信心`);
+            if (odds && odds.flash_warning) autoWarnings.push(`⚠️ 盘口赔率有异动，机构大资金注入！`);
+            if (externalSignal) autoWarnings.push(`外部AI平台交叉验证：${externalSignal}`);
+
+            cacheEntry.finalMethod = { ...finalPred, autoWarnings };
             upcomingCache.set(key, cacheEntry);
-            matchPredictions.push({ home, away, matchKey: key, odds, finalPrediction: finalPred });
+            matchPredictions.push({ home, away, matchKey: key, odds, finalPrediction: { ...finalPred, autoWarnings } });
         } catch (err) { 
             console.warn(`[未开赛] 预测失败: ${err.message}`);
-            const cached = upcomingCache.get(key) || { latest: null, best: null, odds: { hf_odds: '3.0', cs_odds: '6.0', win: '2.0', lose: '2.5', draw: '3.0' } };
-            matchPredictions.push({ home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局' } });
+            const cached = upcomingCache.get(key) || { latest: null, best: null, odds: { hf_odds: '3.0', cs_odds: '6.0', win: '2.0', lose: '2.5', draw: '3.0', halfFullMap: {}, correctScoreMap: {}, totalGoalsMap: {} } };
+            matchPredictions.push({ home, away, matchKey: key, odds: cached.odds, finalPrediction: { method: '胜平负', prediction: '平局', autoWarnings: ['接口异常，系统启用平局兜底'] } });
         }
     }
 
-    // 🟢【新增】三个独立板块
     if (matchPredictions.length === 4) {
-        global.upcomingBetsOverall = calculateKellyForMatches(matchPredictions, null, 100);     // 板块1：综合策略
-        global.upcomingBetsHF = calculateKellyForMatches(matchPredictions, '半全场', 100);      // 板块2：半全场专项
-        global.upcomingBetsCS = calculateKellyForMatches(matchPredictions, '正确比分', 100);    // 板块3：正确比分专项
+        global.upcomingBetsOverall = calculateKellyForMatches(matchPredictions, null, 100);
+        global.upcomingBetsWinDrawLose = calculateKellyForMatches(matchPredictions, '胜平负', 100);
+        global.upcomingBetsHandicap = calculateKellyForMatches(matchPredictions, '让球胜平负', 100);
+        global.upcomingBetsTotalGoals = calculateKellyForMatches(matchPredictions, '总进球数', 100);
+        global.upcomingBetsHF = calculateKellyForMatches(matchPredictions, '半全场', 100);
+        global.upcomingBetsCS = calculateKellyForMatches(matchPredictions, '正确比分', 100);
     }
 }
 
@@ -583,13 +741,40 @@ app.get('/api/state', (req, res) => {
         bestMethod: global.bestMethod || '胜平负',
         stats: global.methodStats || {},
         rates: global.rates || {},
-        // 🟢 三个板块投注数据
+        // 🟢 外部AI对比板块数据
+        externalPredictions: global.externalPredictions || { aiNames: [], predictions: [] },
+        // 6个投注板块
         upcomingBetsOverall: safeBet(global.upcomingBetsOverall),
+        upcomingBetsWinDrawLose: safeBet(global.upcomingBetsWinDrawLose),
+        upcomingBetsHandicap: safeBet(global.upcomingBetsHandicap),
+        upcomingBetsTotalGoals: safeBet(global.upcomingBetsTotalGoals),
         upcomingBetsHF: safeBet(global.upcomingBetsHF),
         upcomingBetsCS: safeBet(global.upcomingBetsCS),
         betSummary: safeBetSummary
     };
     res.json(state);
+});
+
+// 复盘日记接口
+app.get('/api/review', (req, res) => {
+    const logs = [];
+    const keys = Array.from(optimalCache.keys());
+    for (const matchId of keys) {
+        const data = optimalCache.get(matchId);
+        if (data && data.pred && data.actualScore) {
+            const predObj = data.pred;
+            const result = {
+                match: `${data.home || '未知'} vs ${data.away || '未知'}`,
+                actualScore: data.actualScore,
+                predictedHF: predObj.half_full ? predObj.half_full.prediction : '无',
+                predictedCS: predObj.correct_score ? predObj.correct_score.prediction : '无',
+                isHitHF: predObj.half_full && predObj.half_full.prediction === (data.actualScore.split(':')[0] > data.actualScore.split(':')[1] ? '主队胜' : (data.actualScore.split(':')[0] < data.actualScore.split(':')[1] ? '客队胜' : '平局')),
+                isHitCS: predObj.correct_score && predObj.correct_score.prediction === data.actualScore
+            };
+            logs.push(result);
+        }
+    }
+    res.json({ reviews: logs.reverse() });
 });
 
 const PORT = process.env.PORT || 3000;
