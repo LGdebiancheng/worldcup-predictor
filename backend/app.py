@@ -19,7 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- 读取 5 个 API 密钥 ----------
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY")
 KIMI_KEY = os.getenv("KIMI_API_KEY")
 MINIMAX_KEY = os.getenv("MINIMAX_API_KEY")
@@ -29,12 +28,7 @@ ALIBABA_KEY = os.getenv("ALIBABA_API_KEY")
 CACHE = {"predictions": None, "last_update": None, "is_updating": False}
 
 async def fetch_matches():
-    return [
-        {"id": 1, "home": "巴西", "away": "阿根廷"},
-        {"id": 2, "home": "德国", "away": "法国"},
-        {"id": 3, "home": "英格兰", "away": "葡萄牙"},
-        {"id": 4, "home": "荷兰", "away": "西班牙"},
-    ]
+    return [{"id": 1, "home": "巴西", "away": "阿根廷"}, {"id": 2, "home": "德国", "away": "法国"}, {"id": 3, "home": "英格兰", "away": "葡萄牙"}, {"id": 4, "home": "荷兰", "away": "西班牙"}]
 
 async def call_deepseek(prompt: str) -> str:
     if not DEEPSEEK_KEY: return "Error: 未配置 DeepSeek API Key"
@@ -46,8 +40,7 @@ async def call_deepseek(prompt: str) -> str:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 async def call_kimi(prompt: str) -> str:
     if not KIMI_KEY: return "Error: 未配置 Kimi API Key"
@@ -59,8 +52,7 @@ async def call_kimi(prompt: str) -> str:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 async def call_minimax(prompt: str) -> str:
     if not MINIMAX_KEY: return "Error: 未配置 MiniMax API Key"
@@ -72,8 +64,7 @@ async def call_minimax(prompt: str) -> str:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
             resp.raise_for_status()
             return resp.json().get("reply", "Error: 未获取到回复")
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 async def call_zhipu(prompt: str) -> str:
     if not ZHIPU_KEY: return "Error: 未配置 智谱 API Key"
@@ -85,8 +76,7 @@ async def call_zhipu(prompt: str) -> str:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 async def call_alibaba(prompt: str) -> str:
     if not ALIBABA_KEY: return "Error: 未配置 阿里百炼 API Key"
@@ -98,8 +88,7 @@ async def call_alibaba(prompt: str) -> str:
             resp = await asyncio.wait_for(client.post(url, json=data, headers=headers), timeout=8.0)
             resp.raise_for_status()
             return resp.json()["output"]["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as e: return f"Error: {str(e)}"
 
 async def fetch_predictions_async():
     matches = await fetch_matches()
@@ -107,7 +96,6 @@ async def fetch_predictions_async():
     results_by_match = {idx: {} for idx in range(len(matches))}
     for idx, match in enumerate(matches):
         prompt = f"预测足球比赛最终比分，只回复比分（格式如 2-1），不要其他文字：{match['home']} vs {match['away']}"
-        print(f"-> [比赛 {idx+1}] 同时请求 5 个 AI...")
         tasks = {"DeepSeek": call_deepseek(prompt), "Kimi": call_kimi(prompt), "MiniMax": call_minimax(prompt), "智谱": call_zhipu(prompt), "阿里百炼": call_alibaba(prompt)}
         batch_results = await asyncio.gather(*tasks.values(), return_exceptions=True)
         model_names = list(tasks.keys())
